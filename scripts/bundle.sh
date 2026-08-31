@@ -38,6 +38,12 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>LSMinimumSystemVersion</key>    <string>14.0</string>
   <key>NSHighResolutionCapable</key>   <true/>
   <key>ATSApplicationFontsPath</key>   <string>Fonts</string>
+
+  <!-- EventKit refuses to prompt (and the app traps) without these. -->
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>Foglio shows today's meetings beside your notes and tasks. Your calendar data stays on this Mac.</string>
+  <key>NSCalendarsUsageDescription</key>
+  <string>Foglio shows today's meetings beside your notes and tasks. Your calendar data stays on this Mac.</string>
 </dict>
 </plist>
 PLIST

@@ -5,6 +5,9 @@ import SwiftUI
 struct MainWindowView: View {
     @Bindable var state: AppState
     let store: Store
+    let calendar: CalendarSource
+
+    @FocusState private var searchFocused: Bool
 
     private var theme: Theme { state.theme }
 
@@ -21,6 +24,7 @@ struct MainWindowView: View {
         .background(theme.bg)
         .environment(\.theme, theme)
         .preferredColorScheme(state.themeMode == .dark ? .dark : .light)
+        .onChange(of: state.searchFocusRequests) { _, _ in searchFocused = true }
     }
 
     // MARK: - Header
@@ -65,6 +69,24 @@ struct MainWindowView: View {
                 .textFieldStyle(.plain)
                 .font(Typo.sans(12.5))
                 .foregroundStyle(theme.text)
+                .focused($searchFocused)
+                .onSubmit { searchFocused = false }
+
+            // Without this a filter can be left applied with no obvious way
+            // back — the field looks inert once focus moves away.
+            if !state.search.isEmpty {
+                Button {
+                    state.search = ""
+                    searchFocused = false
+                } label: {
+                    Text("×")
+                        .font(.system(size: 13))
+                        .foregroundStyle(theme.muted)
+                        .frame(width: 14, height: 14)
+                }
+                .buttonStyle(.flat)
+                .help("Clear search (⎋)")
+            }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -106,7 +128,7 @@ struct MainWindowView: View {
                         .strokeBorder(theme.line, lineWidth: 1)
                 )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.flat)
     }
 
     private var dateLabel: String {
@@ -132,8 +154,9 @@ struct MainWindowView: View {
                             RoundedRectangle(cornerRadius: 8, style: .continuous)
                                 .fill(isActive ? theme.accentSoft : .clear)
                         )
+                        .hoverHighlight(theme, active: !isActive)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.flat)
                 .help(item.label)
             }
             Spacer()
@@ -148,19 +171,28 @@ struct MainWindowView: View {
 
     @ViewBuilder
     private var content: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(state.section.label)
-                .font(Typo.sans(19, .semibold))
-                .foregroundStyle(theme.text)
-            Text("Not built yet — \(store.notes.count) notes, \(store.tasks.count) tasks, \(store.todaysLog.count) log entries loaded from \(store.root.path).")
-                .font(Typo.sans(12.5))
-                .foregroundStyle(theme.muted)
-                .textSelection(.enabled)
-            Spacer()
+        switch state.section {
+        case .notes:
+            NotesView(state: state, store: store)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .tasks:
+            TasksView(state: state, store: store)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .capture:
+            CaptureView(state: state, store: store)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .settings:
+            SettingsView(state: state, store: store)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .roadmap:
+            RoadmapView(state: state, store: store)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .week:
+            WeekView(state: state, store: store)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .calendar:
+            CalendarView(state: state, store: store, calendar: calendar)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .padding(.horizontal, 32)
-        .padding(.top, 26)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(theme.bg)
     }
 }

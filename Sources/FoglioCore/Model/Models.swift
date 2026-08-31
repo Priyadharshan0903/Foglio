@@ -58,7 +58,7 @@ struct Note: Identifiable, Equatable, Codable {
     var folder: Folder = .scratch
     /// A task label or milestone title this note is pinned to (:1034).
     var pin: String?
-    var updatedAt: Date = Date()
+    var updatedAt: Date = Clock.now()
 
     var blocks: [Block] {
         get { Markdown.parse(body) }
@@ -66,18 +66,43 @@ struct Note: Identifiable, Equatable, Codable {
     }
 
     /// First non-empty paragraph or todo, link brackets stripped (:1022).
+    ///
+    /// Deliberately scans lines instead of going through `blocks`. The note list
+    /// asks every note for its snippet on every render, so a full markdown parse
+    /// here meant re-parsing the entire library on each keystroke — which is
+    /// exactly what made typing stutter.
     var snippet: String {
-        let text = blocks.first {
-            if case .paragraph(let t) = $0 { return !t.isEmpty }
-            return $0.isTodo
-        }?.plainText ?? ""
-        return text.replacingOccurrences(of: "[[", with: "")
+        var insideFence = false
+
+        for line in body.split(separator: "\n", omittingEmptySubsequences: false) {
+            if line.hasPrefix("```") { insideFence.toggle(); continue }
+            if insideFence || line.isEmpty { continue }
+
+            // Todo: "- [ ] text" / "- [x] text"
+            if line.hasPrefix("- ["), let close = line.firstIndex(of: "]"),
+               line.index(after: close) < line.endIndex {
+                return strip(String(line[line.index(close, offsetBy: 2)...]))
+            }
+            // Headings, bullets, tables, dividers and images aren't snippets.
+            if line.hasPrefix("#") || line.hasPrefix("- ") || line.hasPrefix("|")
+                || line.hasPrefix("---") || line.hasPrefix("![") { continue }
+
+            return strip(String(line))
+        }
+        return ""
+    }
+
+    private func strip(_ text: String) -> String {
+        text.replacingOccurrences(of: "[[", with: "")
             .replacingOccurrences(of: "]]", with: "")
     }
 
+    /// Case-insensitive without lowercasing (and so reallocating) the whole body
+    /// for every note on every keystroke.
     func matches(_ query: String) -> Bool {
         guard !query.isEmpty else { return true }
-        return (title + " " + body).lowercased().contains(query.lowercased())
+        return title.range(of: query, options: .caseInsensitive) != nil
+            || body.range(of: query, options: .caseInsensitive) != nil
     }
 }
 
@@ -88,16 +113,16 @@ struct TaskItem: Identifiable, Equatable, Codable {
     var meta: String = ""
     var done: Bool = false
     var completedAt: Date?
-    var createdAt: Date = Date()
+    var createdAt: Date = Clock.now()
 }
 
 struct LogEntry: Identifiable, Equatable, Codable {
     var id: UUID = UUID()
-    var at: Date = Date()
+    var at: Date = Clock.now()
     var text: String = ""
     var kind: LogKind = .manual
 
-    init(text: String, kind: LogKind, at: Date = Date(), id: UUID = UUID()) {
+    init(text: String, kind: LogKind, at: Date = Clock.now(), id: UUID = UUID()) {
         self.id = id
         self.at = at
         self.text = text

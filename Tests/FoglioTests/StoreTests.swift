@@ -157,3 +157,81 @@ func storeTests() {
         )
     }
 }
+
+@MainActor
+func renameTests() {
+    func freshStore() -> (Store, URL) {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("foglio-test-\(UUID().uuidString)")
+        let store = Store(root: root)
+        store.load()
+        return (store, root)
+    }
+
+    Check.suite("Renaming a note does not orphan files") {
+        let (store, root) = freshStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let notesDir = root.appendingPathComponent("notes")
+        func fileCount() -> Int {
+            ((try? FileManager.default.contentsOfDirectory(atPath: notesDir.path)) ?? [])
+                .filter { $0.hasSuffix(".md") }.count
+        }
+
+        let before = fileCount()
+        var note = store.newNote(in: .scratch)
+        Check.equal(fileCount(), before + 1, "a new note writes one file")
+
+        // Type a title one character at a time — the filename tracks the title,
+        // so this previously left one orphaned file per keystroke.
+        for title in ["T", "Te", "Tes", "Test", "Test ", "Test S", "Test Script"] {
+            note.title = title
+            store.upsert(note)
+            note = store.note(id: note.id) ?? note
+        }
+
+        Check.equal(fileCount(), before + 1, "typing an 11-character title still leaves exactly one file")
+        Check.equal(store.notes.filter { $0.id == note.id }.count, 1, "and exactly one note in memory")
+
+        // The stale files also used to reload as duplicate notes.
+        let reopened = Store(root: root)
+        reopened.load()
+        Check.equal(reopened.notes.count, store.notes.count, "no duplicates appear after a reload")
+        Check.expect(
+            reopened.notes.contains { $0.title == "Test Script" },
+            "the note reloads under its final title"
+        )
+    }
+
+    Check.suite("Duplicate ids left by the old bug are healed on load") {
+        let (store, root) = freshStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let notesDir = root.appendingPathComponent("notes")
+
+        // Simulate the corrupted state: several files, same id, different titles.
+        let id = UUID()
+        for (i, title) in ["Hel", "Hell", "Hello"].enumerated() {
+            var note = Note(title: title, body: "body", folder: .scratch)
+            note.id = id
+            note.updatedAt = Date(timeIntervalSince1970: 1_756_650_000 + Double(i))
+            try? NoteFile.encode(note).write(
+                to: notesDir.appendingPathComponent(NoteFile.filename(for: note)),
+                atomically: true, encoding: .utf8
+            )
+        }
+        _ = store
+
+        let healed = Store(root: root)
+        healed.load()
+        Check.equal(healed.notes.filter { $0.id == id }.count, 1, "duplicates collapse to one note")
+        Check.equal(
+            healed.notes.first { $0.id == id }?.title,
+            "Hello",
+            "the most recently updated version wins"
+        )
+
+        let remaining = ((try? FileManager.default.contentsOfDirectory(atPath: notesDir.path)) ?? [])
+            .filter { $0.hasPrefix("hel") }
+        Check.equal(remaining.count, 1, "the stale files are deleted from disk")
+    }
+}

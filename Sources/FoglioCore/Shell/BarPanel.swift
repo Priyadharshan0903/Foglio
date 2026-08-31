@@ -61,6 +61,12 @@ final class BarPanelController {
         panel.orderFrontRegardless()
     }
 
+    func hide() {
+        panel.orderOut(nil)
+    }
+
+    var isVisible: Bool { panel.isVisible }
+
     /// Vertically centred, 22px in from the chosen screen edge (:913).
     func reposition() {
         guard let screen = NSScreen.main else { return }

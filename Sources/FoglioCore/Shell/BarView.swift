@@ -51,7 +51,7 @@ struct BarView: View {
                               : (hovered == item ? theme.accentSoft : .clear))
                 )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.flat)
         .onHover { hovered = $0 ? item : (hovered == item ? nil : hovered) }
         .help(item.label)
     }
@@ -76,7 +76,7 @@ struct BarView: View {
                     value: pulsing
                 )
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.flat)
         .onHover { hoveredTimer = $0 }
         .help(state.timerRunning ? "Pause focus" : "Start focus")
         .onChange(of: state.timerRunning) { _, running in

@@ -52,6 +52,26 @@ final class AppState {
     var section: Section = .notes
     var search: String = ""
 
+    // Notes UI state, mirroring the design's `folder` / `activeNote` /
+    // `activeBlock` (Day Log.dc.html:644). `folderFilter == nil` is "All notes".
+    var folderFilter: Folder?
+    var activeNoteId: UUID?
+    var activeBlock: Int?
+    var moreOpen = false
+    var pinOpen = false
+
+    // Quick capture / Tasks draft row (:695)
+    var draft: String = ""
+    var draftLane: Lane = .priority
+
+    /// Bumped to ask the window to put the caret in the search field (⌘K).
+    var searchFocusRequests = 0
+
+    /// Selected milestone on the Roadmap (`activeMs`, :695).
+    var activeMilestone: Int = 1
+    /// Selected event on the Calendar day timeline.
+    var selectedEventId: String?
+
     // Focus timer (Day Log.dc.html:713)
     var focusMinutes: Int = 25 { didSet { defaults.set(focusMinutes, forKey: "focusMinutes") } }
     var secondsRemaining: Int = 25 * 60

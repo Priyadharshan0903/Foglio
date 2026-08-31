@@ -25,6 +25,17 @@ final class Store {
     let root: URL
     private var loaded = false
 
+    /// The filename each note currently occupies on disk.
+    ///
+    /// Filenames are derived from the title, so they change as you rename a
+    /// note. Without remembering the previous name, every save wrote a *new*
+    /// file and orphaned the last one — typing an 11-character title left 11
+    /// files behind, which then reloaded as 11 duplicate notes.
+    private var fileNames: [UUID: String] = [:]
+
+    /// Pending debounced disk writes, keyed by note.
+    private var pendingSaves: [UUID: Task<Void, Never>] = [:]
+
     init(root: URL? = nil) {
         self.root = root ?? Store.defaultRoot()
     }
@@ -47,11 +58,7 @@ final class Store {
 
         try? FileManager.default.createDirectory(at: notesDir, withIntermediateDirectories: true)
 
-        notes = (try? FileManager.default.contentsOfDirectory(at: notesDir, includingPropertiesForKeys: nil))?
-            .filter { $0.pathExtension == "md" }
-            .compactMap { try? String(contentsOf: $0, encoding: .utf8) }
-            .map(NoteFile.decode)
-            .sorted { $0.updatedAt > $1.updatedAt } ?? []
+        notes = loadNotes()
 
         tasks = decode([TaskItem].self, from: tasksURL) ?? []
         log = decode([LogEntry].self, from: logURL) ?? []
@@ -67,6 +74,41 @@ final class Store {
             saveLog()
         }
         saveMilestones()
+    }
+
+    /// Reads every note file, collapsing duplicate ids left behind by the
+    /// filename-churn bug above and deleting the stale files as it goes, so an
+    /// affected store heals itself on next launch.
+    private func loadNotes() -> [Note] {
+        let urls = (try? FileManager.default.contentsOfDirectory(at: notesDir, includingPropertiesForKeys: nil))?
+            .filter { $0.pathExtension == "md" } ?? []
+
+        var byId: [UUID: Note] = [:]
+        var names: [UUID: String] = [:]
+
+        for url in urls {
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let note = NoteFile.decode(text)
+
+            if let existing = byId[note.id] {
+                // Same note, two files. Keep whichever was written last.
+                let keepNew = note.updatedAt > existing.updatedAt
+                let loserName = keepNew ? names[note.id] : url.lastPathComponent
+                if let loserName {
+                    try? FileManager.default.removeItem(at: notesDir.appendingPathComponent(loserName))
+                }
+                if keepNew {
+                    byId[note.id] = note
+                    names[note.id] = url.lastPathComponent
+                }
+            } else {
+                byId[note.id] = note
+                names[note.id] = url.lastPathComponent
+            }
+        }
+
+        fileNames = names
+        return byId.values.sorted { $0.updatedAt > $1.updatedAt }
     }
 
     private func decode<T: Decodable>(_ type: T.Type, from url: URL) -> T? {
@@ -89,15 +131,37 @@ final class Store {
 
     func note(id: UUID) -> Note? { notes.first { $0.id == id } }
 
-    func upsert(_ note: Note) {
+    /// `debounced` keeps the in-memory value current immediately but delays the
+    /// disk write. Use it while typing: writing a whole file per keystroke is
+    /// both slow and what produced the orphaned-file bug.
+    func upsert(_ note: Note, debounced: Bool = false) {
         var updated = note
-        updated.updatedAt = Date()
+        updated.updatedAt = Clock.now()
         if let i = notes.firstIndex(where: { $0.id == note.id }) {
             notes[i] = updated
         } else {
             notes.insert(updated, at: 0)
         }
-        saveNote(updated)
+        if debounced { scheduleSave(updated) } else { saveNote(updated) }
+    }
+
+    private func scheduleSave(_ note: Note) {
+        pendingSaves[note.id]?.cancel()
+        pendingSaves[note.id] = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled, let self else { return }
+            self.saveNote(note)
+            self.pendingSaves[note.id] = nil
+        }
+    }
+
+    /// Force out anything still queued — call when a note stops being edited.
+    func flushPendingSaves() {
+        for (id, task) in pendingSaves {
+            task.cancel()
+            if let note = notes.first(where: { $0.id == id }) { saveNote(note) }
+        }
+        pendingSaves.removeAll()
     }
 
     @discardableResult
@@ -110,14 +174,29 @@ final class Store {
 
     func deleteNote(id: UUID) {
         guard let i = notes.firstIndex(where: { $0.id == id }) else { return }
-        let note = notes.remove(at: i)
-        try? FileManager.default.removeItem(at: notesDir.appendingPathComponent(NoteFile.filename(for: note)))
+        notes.remove(at: i)
+        pendingSaves[id]?.cancel()
+        pendingSaves[id] = nil
+        if let name = fileNames.removeValue(forKey: id) {
+            try? FileManager.default.removeItem(at: notesDir.appendingPathComponent(name))
+        }
     }
 
     private func saveNote(_ note: Note) {
         try? FileManager.default.createDirectory(at: notesDir, withIntermediateDirectories: true)
-        let url = notesDir.appendingPathComponent(NoteFile.filename(for: note))
-        try? NoteFile.encode(note).write(to: url, atomically: true, encoding: .utf8)
+
+        let name = NoteFile.filename(for: note)
+        // A retitled note moves file: drop the old one rather than orphan it.
+        if let previous = fileNames[note.id], previous != name {
+            try? FileManager.default.removeItem(at: notesDir.appendingPathComponent(previous))
+        }
+        fileNames[note.id] = name
+
+        try? NoteFile.encode(note).write(
+            to: notesDir.appendingPathComponent(name),
+            atomically: true,
+            encoding: .utf8
+        )
     }
 
     private func saveNotes() { notes.forEach(saveNote) }
@@ -151,7 +230,7 @@ final class Store {
     func setDone(taskId: UUID, done: Bool, autoLog: Bool) {
         guard let i = tasks.firstIndex(where: { $0.id == taskId }) else { return }
         tasks[i].done = done
-        tasks[i].completedAt = done ? Date() : nil
+        tasks[i].completedAt = done ? Clock.now() : nil
         saveTasks()
         if done && autoLog {
             addLog(LogEntry(text: tasks[i].label, kind: .task))
@@ -195,5 +274,28 @@ final class Store {
     /// Pin targets: every incomplete task, then every milestone (:907).
     var pinTargets: [String] {
         tasks.filter { !$0.done }.map(\.label) + milestones.map(\.title)
+    }
+
+    // MARK: - Import
+
+    /// Replaces everything with an imported archive. Note files that are no
+    /// longer represented are removed, so importing into a populated store
+    /// leaves it matching the archive rather than merged with it.
+    func replaceAll(with archive: Archive) {
+        if let existing = try? FileManager.default.contentsOfDirectory(at: notesDir, includingPropertiesForKeys: nil) {
+            for url in existing where url.pathExtension == "md" {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+
+        notes = archive.notes
+        tasks = archive.tasks
+        log = archive.log
+        milestones = archive.milestones
+
+        saveNotes()
+        saveTasks()
+        saveLog()
+        saveMilestones()
     }
 }
