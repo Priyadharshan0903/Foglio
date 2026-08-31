@@ -1,0 +1,16 @@
+# SwiftPM build output
+.build/
+.swiftpm/
+
+# Assembled app bundle from scripts/bundle.sh
+build/
+
+# macOS
+.DS_Store
+
+# Xcode, if it ever gets installed here
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+*.xcuserstate
+DerivedData/
