@@ -17,6 +17,7 @@ let package = Package(
         .target(
             name: "FoglioCore",
             path: "Sources/FoglioCore",
+            resources: [.process("Resources")],
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
         .executableTarget(

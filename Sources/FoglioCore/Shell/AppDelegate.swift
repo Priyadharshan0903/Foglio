@@ -26,36 +26,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let store = Store()
     private let calendar = CalendarSource()
     private var bar: BarPanelController?
+    private var meetingAlert: MeetingAlertPanel?
     private var window: NSWindow?
     private var ticker: Timer?
+    private var calendarTimer: Timer?
+    private var lastBadge: String?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        Debug.log("didFinishLaunching")
         Typo.registerBundledFonts()
+        Debug.log("fonts: geist=\(Typo.geistAvailable) sample=\(Typo.describeResolved())")
         store.load()
         calendar.refreshAccess()
+        calendar.resumeWatching()
+        startCalendarRefresh()
 
         bar = BarPanelController(state: state) { [weak self] section in
             self?.state.section = section
             self?.showMainWindow()
+        }
+        meetingAlert = MeetingAlertPanel(state: state)
+
+        // Under FOGLIO_DEBUG, lay the (hidden) bar out at launch so its geometry
+        // can be inspected without having to close the window first — automation
+        // permission is unreliable here, so this is the practical way to check it.
+        if ProcessInfo.processInfo.environment["FOGLIO_DEBUG"] != nil {
+            bar?.applyEdge()
         }
 
         installMenu()
         registerHotKeys()
         showMainWindow()
         startTicker()
-        observeBarSide()
+        observeBarEdge()
+        Debug.log("launched; NSApp.windows=\(NSApp.windows.count) visible=\(NSApp.windows.filter(\.isVisible).count) edge=\(state.barEdge.rawValue)")
     }
 
-    /// The bar-edge setting has to move an AppKit panel, which SwiftUI can't do
-    /// for us. `withObservationTracking` fires once, so it re-arms each time.
-    private func observeBarSide() {
+    /// The bar-edge setting has to move (and re-measure) an AppKit panel, which
+    /// SwiftUI can't do for us. `withObservationTracking` fires once, so it
+    /// re-arms each time.
+    private func observeBarEdge() {
         withObservationTracking {
-            _ = state.barSide
+            _ = state.barEdge
         } onChange: { [weak self] in
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
-                    self?.bar?.reposition()
-                    self?.observeBarSide()
+                    self?.bar?.applyEdge()
+                    self?.observeBarEdge()
                 }
             }
         }
@@ -101,6 +118,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         false
     }
 
+    /// Meetings move during the day, so re-read every 15 minutes. Cheap for a
+    /// local file; a single conditional GET for a subscription URL.
+    private func startCalendarRefresh() {
+        calendarTimer = Timer.scheduledTimer(withTimeInterval: 900, repeats: true) { [weak self] _ in
+            MainActor.assumeIsolated {
+                guard let self else { return }
+                Task { await self.calendar.refresh() }
+            }
+        }
+    }
+
     private func startTicker() {
         ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -108,6 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 if self.state.tick() {
                     self.store.addLog(LogEntry(text: "Focus block complete", kind: .focus))
                 }
+                self.refreshMeetingNudge()
             }
         }
     }
@@ -130,8 +159,70 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         bar?.hide()
     }
 
+    /// Keeps the calendar badge and the meeting nudge in step, once a second.
+    ///
+    /// The nudge follows the bar: it only makes sense as something you glance at
+    /// while working, so it hides whenever the main window is up.
+    private func refreshMeetingNudge() {
+        guard let bar, let meetingAlert else { return }
+
+        let badge = bar.isVisible ? calendar.badgeText : nil
+        if badge != lastBadge {
+            lastBadge = badge
+            bar.updateBadge(badge)
+        }
+
+        guard bar.isVisible,
+              calendar.isMeetingSoon(within: state.meetingLeadMinutes),
+              let event = calendar.upNext,
+              !state.dismissedMeetings.contains(event.id)
+        else {
+            if meetingAlert.isShowing { meetingAlert.hide() }
+            return
+        }
+
+        guard !meetingAlert.isShowing(event) else { return }
+
+        meetingAlert.show(
+            event: event,
+            barFrame: bar.frame,
+            onJoin: { [weak self] in
+                if let url = MeetingAlertView.joinURL(for: event) { NSWorkspace.shared.open(url) }
+                self?.state.dismissMeeting(event.id)
+                self?.meetingAlert?.hide()
+            },
+            onTakeNotes: { [weak self] in
+                self?.takeNotes(on: event)
+                self?.state.dismissMeeting(event.id)
+                self?.meetingAlert?.hide()
+            },
+            onDismiss: { [weak self] in
+                self?.state.dismissMeeting(event.id)
+                self?.meetingAlert?.hide()
+            }
+        )
+    }
+
+    /// `alertNote` (:929) — a note titled after the meeting, ready to type into.
+    private func takeNotes(on event: DayEvent) {
+        let note = Note(
+            title: event.title,
+            body: Markdown.serialize([
+                .h2("\(Clock.hhmm(event.start)) · \(event.location)"),
+                .paragraph(""),
+            ]),
+            folder: .scratch
+        )
+        store.upsert(note)
+        state.section = .notes
+        state.activeNoteId = note.id
+        state.activeBlock = 1
+        showMainWindow()
+    }
+
     private func showMainWindow() {
         bar?.hide()
+        meetingAlert?.hide()
 
         if let window {
             window.makeKeyAndOrderFront(nil)
@@ -164,5 +255,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         window = w
         w.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
+        Debug.log("showMainWindow: frame=\(w.frame) visible=\(w.isVisible)")
     }
 }

@@ -269,9 +269,32 @@ enum ICS {
 
     /// All events occurring on `day`, expanded and sorted.
     static func events(from text: String, on day: Date, calendarName: String = "Calendar") -> [Event] {
-        parse(text, calendarName: calendarName)
-            .flatMap { occurrences(of: $0, on: day) }
-            .filter { !$0.isAllDay }
-            .sorted { $0.start < $1.start }
+        let calendar = Calendar.current
+        return events(
+            from: text,
+            in: DateInterval(
+                start: calendar.startOfDay(for: day),
+                end: calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: day)) ?? day
+            ),
+            calendarName: calendarName
+        )
+    }
+
+    /// Every occurrence across a date range.
+    ///
+    /// Parses once and expands per day — a week view asking for seven days
+    /// would otherwise re-parse the whole feed seven times.
+    static func events(from text: String, in interval: DateInterval, calendarName: String = "Calendar") -> [Event] {
+        let parsed = parse(text, calendarName: calendarName)
+        let calendar = Calendar.current
+
+        var out: [Event] = []
+        var day = calendar.startOfDay(for: interval.start)
+        while day < interval.end {
+            out += parsed.flatMap { occurrences(of: $0, on: day, calendar: calendar) }
+            guard let next = calendar.date(byAdding: .day, value: 1, to: day) else { break }
+            day = next
+        }
+        return out.filter { !$0.isAllDay }.sorted { $0.start < $1.start }
     }
 }

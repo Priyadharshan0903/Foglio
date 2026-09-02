@@ -252,19 +252,51 @@ struct NoteEditor: View {
                 }
             }
 
-            Button {
-                appendBlock(count: blocks.count)
-            } label: {
-                Text("Type to continue…")
-                    .font(Typo.sans(14))
-                    .foregroundStyle(theme.muted)
-                    .padding(.horizontal, 9).padding(.vertical, 10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+            // Only offer "Type to continue…" when there isn't already an empty
+            // block to type into. Showing both stacked an invisible empty row on
+            // top of the placeholder — the gap under the toolbar — and clicking
+            // it appended a *second* blank line rather than using the first.
+            if needsPlaceholder(blocks) {
+                Button {
+                    appendBlock(count: blocks.count)
+                } label: {
+                    Text("Type to continue…")
+                        .font(Typo.sans(14))
+                        .foregroundStyle(theme.muted)
+                        .padding(.horizontal, 9).padding(.vertical, 10)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .buttonStyle(.flat)
             }
-            .buttonStyle(.flat)
         }
         .padding(.horizontal, 26)
         .padding(.top, 20).padding(.bottom, 34)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard state.activeBlock == nil else { return }
+            if needsPlaceholder(blocks) {
+                appendBlock(count: blocks.count)
+            } else {
+                beginEditing(blocks.count - 1, blocks: blocks)
+            }
+        }
+    }
+
+    /// True when the document doesn't already end in somewhere to type.
+    ///
+    /// An empty trailing paragraph *is* the place to continue, so showing the
+    /// placeholder as well stacked an invisible row on top of it — the gap under
+    /// the toolbar — and clicking it appended a second blank line instead of
+    /// using the first.
+    static func needsPlaceholder(_ blocks: [Block]) -> Bool {
+        guard let last = blocks.last else { return true }
+        if case .paragraph(let text) = last { return !text.isEmpty }
+        return true
+    }
+
+    private func needsPlaceholder(_ blocks: [Block]) -> Bool {
+        Self.needsPlaceholder(blocks)
     }
 
     // MARK: - Editing lifecycle

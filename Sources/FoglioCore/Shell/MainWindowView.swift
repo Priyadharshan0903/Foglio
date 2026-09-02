@@ -9,6 +9,11 @@ struct MainWindowView: View {
 
     @FocusState private var searchFocused: Bool
 
+    /// A fixed height so `AppDelegate` can vertically center the native
+    /// traffic lights against it deterministically, instead of guessing from
+    /// text-driven intrinsic sizing.
+    static let headerHeight: CGFloat = 38
+
     private var theme: Theme { state.theme }
 
     var body: some View {
@@ -22,6 +27,11 @@ struct MainWindowView: View {
             }
         }
         .background(theme.bg)
+        // The window uses fullSizeContentView so the header *is* the titlebar,
+        // with the traffic lights sitting in it — as the design draws it
+        // (:98). Without this SwiftUI keeps the titlebar safe area and pushes
+        // the header down below an empty strip.
+        .ignoresSafeArea(.container, edges: .top)
         .environment(\.theme, theme)
         .preferredColorScheme(state.themeMode == .dark ? .dark : .light)
         .onChange(of: state.searchFocusRequests) { _, _ in searchFocused = true }
@@ -57,7 +67,7 @@ struct MainWindowView: View {
             focusButton
         }
         .padding(.horizontal, 15)
-        .padding(.vertical, 11)
+        .frame(height: Self.headerHeight)
         .background(theme.surface)
     }
 

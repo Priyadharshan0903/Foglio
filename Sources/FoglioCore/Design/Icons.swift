@@ -86,7 +86,20 @@ enum Icon: String, CaseIterable {
     func path(scaledTo size: CGFloat) -> Path {
         var p = Path()
         build(into: &p)
-        return p.applying(CGAffineTransform(scaleX: size / 24, y: size / 24))
+
+        // Centre each glyph's bounding box in the 24x24 box before scaling.
+        // Several of the design's paths sit up to a point off-centre — `notes`
+        // leans right, `folder` and `chart` sit low — which is invisible on its
+        // own but reads as a wobbly column once they're stacked in the bar.
+        // Only the position is normalised; the shapes and their relative sizes
+        // are left exactly as drawn.
+        let box = p.boundingRect
+        let dx = (24 - box.width) / 2 - box.minX
+        let dy = (24 - box.height) / 2 - box.minY
+
+        return p
+            .applying(CGAffineTransform(translationX: dx, y: dy))
+            .applying(CGAffineTransform(scaleX: size / 24, y: size / 24))
     }
 }
 

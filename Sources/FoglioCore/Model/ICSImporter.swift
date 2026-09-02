@@ -47,6 +47,16 @@ enum ICSImporter {
         return url.lastPathComponent
     }
 
+    /// When the export we'd actually read was written — i.e. how current the
+    /// snapshot is. There is no live sync available, so surfacing this honestly
+    /// is the difference between a useful view and a quietly wrong one.
+    static func exportedAt(_ url: URL) -> Date? {
+        let target = isDirectory(url) ? newestExport(in: url) : url
+        guard let target else { return nil }
+        return try? target.resourceValues(forKeys: [.contentModificationDateKey])
+            .contentModificationDate
+    }
+
     static func isDirectory(_ url: URL) -> Bool {
         (try? url.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
     }

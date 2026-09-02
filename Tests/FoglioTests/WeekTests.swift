@@ -89,3 +89,55 @@ func weekTests() {
         Check.expect(event(startingIn: -120, lasting: 30).isPast, "and is marked past")
     }
 }
+
+@MainActor
+func meetingNudgeTests() {
+    func event(startingIn minutes: Int, lasting: Int = 30, at location: String = "No location") -> DayEvent {
+        let start = Date().addingTimeInterval(Double(minutes) * 60)
+        return DayEvent(
+            id: "evt-\(minutes)", title: "Platform standup", start: start,
+            end: start.addingTimeInterval(Double(lasting) * 60),
+            location: location, organizer: "Arun K.", attendees: ["Arun K."], calendar: "Work"
+        )
+    }
+
+    Check.suite("Meeting nudge — the Join link") {
+        // Only offer Join when there's somewhere to go; a dead button is worse
+        // than no button.
+        Check.expect(
+            MeetingAlertView.joinURL(for: event(startingIn: 5, at: "https://meet.google.com/abc-defg-hij")) != nil,
+            "a Google Meet link is offered"
+        )
+        Check.expect(
+            MeetingAlertView.joinURL(for: event(startingIn: 5, at: "Join at https://zoom.us/j/123 please")) != nil,
+            "a Zoom link is found inside surrounding text"
+        )
+        Check.expect(
+            MeetingAlertView.joinURL(for: event(startingIn: 5, at: "Meeting room 4B")) == nil,
+            "a physical room offers no Join"
+        )
+        Check.expect(
+            MeetingAlertView.joinURL(for: event(startingIn: 5, at: "https://example.com/notes")) == nil,
+            "an unrelated link is not treated as a conference"
+        )
+        Check.expect(
+            MeetingAlertView.joinURL(for: event(startingIn: 5, at: "No location")) == nil,
+            "no location offers no Join"
+        )
+    }
+
+    Check.suite("Meeting nudge — dismissal is per meeting") {
+        // The design's dismissAlert (:927) set one flag, so dismissing a single
+        // nudge silently killed every later one. Dismissal is per event here.
+        let state = AppState()
+        let first = event(startingIn: 5)
+        let second = event(startingIn: 40)
+
+        state.dismissMeeting(first.id)
+        Check.expect(state.dismissedMeetings.contains(first.id), "the dismissed meeting is remembered")
+        Check.expect(
+            !state.dismissedMeetings.contains(second.id),
+            "a later meeting still nudges"
+        )
+    }
+}

@@ -65,3 +65,52 @@ func notesTests() {
         Check.expect(!note.matches("kubernetes"), "non-matching query is rejected")
     }
 }
+
+func editorPlaceholderTests() {
+    Check.suite("Editor — the trailing placeholder") {
+        // A note that ends in text needs somewhere to continue.
+        Check.expect(
+            NoteEditor.needsPlaceholder([.paragraph("Some prose")]),
+            "a note ending in text offers 'Type to continue…'"
+        )
+        Check.expect(
+            NoteEditor.needsPlaceholder([]),
+            "an empty note offers it too, as the way to start"
+        )
+        // ...but an empty trailing paragraph already *is* that place. Showing
+        // both stacked an invisible row above the placeholder — the gap under
+        // the toolbar — and clicking it appended a second blank line.
+        Check.expect(
+            !NoteEditor.needsPlaceholder([.paragraph("Some prose"), .paragraph("")]),
+            "a trailing empty paragraph suppresses the placeholder"
+        )
+        Check.expect(
+            !NoteEditor.needsPlaceholder([.paragraph("")]),
+            "a brand-new note shows one empty block, not a block plus a placeholder"
+        )
+        // Non-paragraph endings still need one — you can't type into a divider.
+        Check.expect(
+            NoteEditor.needsPlaceholder([.divider]),
+            "a trailing divider still offers the placeholder"
+        )
+        Check.expect(
+            NoteEditor.needsPlaceholder([.todo(text: "", checked: false)]),
+            "an empty todo is a checklist item, not a place to write prose"
+        )
+        Check.expect(
+            NoteEditor.needsPlaceholder([.code(language: "go", text: "")]),
+            "a trailing code block still offers the placeholder"
+        )
+    }
+
+    Check.suite("Editor — the gap that was reported") {
+        // The note from the screenshot: body "\n" — two empty paragraphs, plus a
+        // placeholder underneath, which is what pushed the content down.
+        let blocks = Markdown.parse("\n")
+        Check.equal(blocks.count, 2, "a lone newline is two empty paragraphs")
+        Check.expect(
+            !NoteEditor.needsPlaceholder(blocks),
+            "and no longer carries a placeholder on top of them"
+        )
+    }
+}

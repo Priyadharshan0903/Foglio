@@ -377,3 +377,113 @@ func importerTests() {
         )
     }
 }
+
+@MainActor
+func snapshotAgeTests() {
+    let fm = FileManager.default
+    let root = URL(fileURLWithPath: NSTemporaryDirectory())
+        .appendingPathComponent("foglio-age-\(UUID().uuidString)")
+    try? fm.createDirectory(at: root, withIntermediateDirectories: true)
+    defer { try? fm.removeItem(at: root) }
+
+    func writeExport(named name: String, ageInHours: Double) -> URL {
+        let url = root.appendingPathComponent(name)
+        try? "BEGIN:VCALENDAR\nEND:VCALENDAR".write(to: url, atomically: true, encoding: .utf8)
+        try? fm.setAttributes(
+            [.modificationDate: Date(timeIntervalSinceNow: -ageInHours * 3600)],
+            ofItemAtPath: url.path
+        )
+        return url
+    }
+
+    Check.suite("Snapshot age — reported from the file being read") {
+        let fresh = writeExport(named: "fresh.ics", ageInHours: 0)
+        Check.expect(ICSImporter.exportedAt(fresh) != nil, "a file reports when it was written")
+
+        // For a folder it must describe the export actually in use, not the folder.
+        let old = writeExport(named: "old.ics", ageInHours: 50)
+        _ = old
+        let newestAge = ICSImporter.exportedAt(root)
+        Check.expect(
+            newestAge.map { Date().timeIntervalSince($0) < 3600 } == true,
+            "a folder reports the age of its newest export, not its oldest"
+        )
+    }
+
+    Check.suite("Snapshot age — staleness only applies to exports") {
+        let source = CalendarSource()
+
+        // A live backend is never "stale" — there's nothing to re-export.
+        source.backend = .subscription
+        Check.expect(!source.snapshotIsStale, "a subscription URL is never flagged stale")
+
+        source.backend = .file
+        source.chooseImport(at: writeExport(named: "recent.ics", ageInHours: 1))
+        Check.expect(!source.snapshotIsStale, "an export from an hour ago is fine")
+        Check.equal(source.snapshotAge, "1h ago", "and its age reads in hours")
+
+        source.chooseImport(at: writeExport(named: "ancient.ics", ageInHours: 30))
+        Check.expect(source.snapshotIsStale, "an export from yesterday is flagged stale")
+        Check.equal(source.snapshotAge, "1d ago", "and its age reads in days")
+    }
+}
+
+@MainActor
+func weekRangeTests() {
+    var cal = Calendar.current
+    cal.firstWeekday = 2
+
+    Check.suite("Calendar week — the visible range") {
+        // A Wednesday, to prove the week is derived rather than "today + 7".
+        let wednesday = cal.date(from: DateComponents(year: 2026, month: 3, day: 4, hour: 15))!
+        let week = CalendarSource.week(containing: wednesday)
+
+        Check.equal(cal.component(.weekday, from: week.start), 2, "weeks start on Monday")
+        Check.expect(week.contains(wednesday), "the anchor day is inside its own week")
+        Check.equal(Int(week.duration / 86_400), 7, "a week is seven days long")
+
+        // Sunday must belong to the week that started the previous Monday, which
+        // a Sunday-first calendar would get wrong.
+        let sunday = cal.date(byAdding: .day, value: 4, to: wednesday)!
+        Check.equal(
+            CalendarSource.week(containing: sunday).start,
+            week.start,
+            "Sunday belongs to the week that began on Monday"
+        )
+
+        let nextMonday = cal.date(byAdding: .day, value: 5, to: wednesday)!
+        Check.expect(
+            CalendarSource.week(containing: nextMonday).start > week.start,
+            "the following Monday starts a new week"
+        )
+    }
+
+    Check.suite("ICS — expanding a whole week in one parse") {
+        func stamp(_ d: Date) -> String {
+            let f = DateFormatter(); f.dateFormat = "yyyyMMdd'T'HHmmss"; return f.string(from: d)
+        }
+        let monday = cal.date(from: DateComponents(year: 2026, month: 3, day: 2, hour: 9))!
+        let ics = """
+        BEGIN:VCALENDAR
+        BEGIN:VEVENT
+        UID:standup
+        SUMMARY:Standup
+        DTSTART:\(stamp(monday))
+        DTEND:\(stamp(monday.addingTimeInterval(900)))
+        RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR
+        END:VEVENT
+        END:VCALENDAR
+        """
+
+        let week = CalendarSource.week(containing: monday)
+        let events = ICS.events(from: ics, in: week)
+        Check.equal(events.count, 5, "a weekday standup expands to five in a week range")
+        Check.expect(
+            events.map(\.start) == events.map(\.start).sorted(),
+            "results come back in chronological order"
+        )
+        // Each occurrence needs its own identity or the grid collapses them.
+        let ids = Set(events.map { DayEvent($0).id })
+        Check.equal(ids.count, 5, "each occurrence keeps a distinct id")
+    }
+}

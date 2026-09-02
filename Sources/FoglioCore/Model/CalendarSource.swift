@@ -117,6 +117,44 @@ final class CalendarSource {
         importPath.map { ICSImporter.describe(URL(fileURLWithPath: $0)) }
     }
 
+    /// When the export being read was produced.
+    var exportedAt: Date? {
+        importPath.flatMap { ICSImporter.exportedAt(URL(fileURLWithPath: $0)) }
+    }
+
+    /// A snapshot older than this probably predates a meeting you've since
+    /// accepted, so the UI says so rather than looking authoritative.
+    var snapshotIsStale: Bool {
+        guard backend == .file, let exportedAt else { return false }
+        return Date().timeIntervalSince(exportedAt) > 12 * 3600
+    }
+
+    var snapshotAge: String? {
+        guard let exportedAt else { return nil }
+        let seconds = Date().timeIntervalSince(exportedAt)
+        if seconds < 90 { return "just now" }
+        if seconds < 3600 { return "\(Int(seconds / 60)) min ago" }
+        if seconds < 86_400 { return "\(Int(seconds / 3600))h ago" }
+        return "\(Int(seconds / 86_400))d ago"
+    }
+
+    /// Google's export page, so re-exporting is one click from here.
+    static let googleExportURL = URL(string: "https://calendar.google.com/calendar/u/0/r/settings/export")!
+
+    // @ObservationIgnored: the macro turns stored properties into computed
+    // ones, which rules out `lazy`, and a file watcher isn't view state anyway.
+    @ObservationIgnored private var watcher: FolderWatcher?
+
+    private func startWatching(_ url: URL) {
+        if watcher == nil {
+            watcher = FolderWatcher { [weak self] in
+                guard let self, self.backend == .file else { return }
+                Task { await self.refresh() }
+            }
+        }
+        watcher?.watch(url)
+    }
+
     private let store = EKEventStore()
     private let defaults = UserDefaults.standard
 
@@ -131,17 +169,41 @@ final class CalendarSource {
 
     // MARK: - Entry points
 
+    /// The span currently loaded. The calendar shows a week at a time, so
+    /// everything works in ranges; a single day is just a one-day range.
+    private(set) var range: DateInterval = CalendarSource.week(containing: Date())
+
+    static func week(containing date: Date) -> DateInterval {
+        var calendar = Calendar.current
+        calendar.firstWeekday = 2 // Monday, as work weeks are read
+        let start = calendar.dateInterval(of: .weekOfYear, for: date)?.start
+            ?? calendar.startOfDay(for: date)
+        return DateInterval(start: start, duration: 7 * 24 * 3600)
+    }
+
     func refresh(for day: Date = Date()) async {
+        await refresh(range: CalendarSource.week(containing: day))
+    }
+
+    func refresh(range: DateInterval) async {
+        self.range = range
         switch backend {
         case .eventKit:
             refreshAccess()
-            reloadFromEventKit(for: day)
+            reloadFromEventKit(range)
         case .subscription:
-            await reloadFromURL(for: day)
+            await reloadFromURL(range)
         case .file:
-            reloadFromCachedFile(for: day)
+            reloadFromCachedFile(range)
         }
     }
+
+    /// Events falling on one day of the loaded range.
+    func events(on day: Date) -> [DayEvent] {
+        events.filter { Calendar.current.isDate($0.start, inSameDayAs: day) }
+    }
+
+    var todaysEvents: [DayEvent] { events(on: Date()) }
 
     // MARK: - EventKit
 
@@ -157,17 +219,13 @@ final class CalendarSource {
     func requestAccess(for day: Date = Date()) async {
         let granted = (try? await store.requestFullAccessToEvents()) ?? false
         access = granted ? .granted : .denied
-        if granted { reloadFromEventKit(for: day) }
+        if granted { reloadFromEventKit(CalendarSource.week(containing: day)) }
     }
 
-    private func reloadFromEventKit(for day: Date) {
+    private func reloadFromEventKit(_ range: DateInterval) {
         guard access == .granted else { events = []; return }
 
-        let cal = Calendar.current
-        let start = cal.startOfDay(for: day)
-        guard let end = cal.date(byAdding: .day, value: 1, to: start) else { return }
-
-        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+        let predicate = store.predicateForEvents(withStart: range.start, end: range.end, calendars: nil)
         events = store.events(matching: predicate)
             .filter { !$0.isAllDay }
             .sorted { $0.startDate < $1.startDate }
@@ -183,7 +241,7 @@ final class CalendarSource {
                     calendar: event.calendar?.title ?? "Calendar"
                 )
             }
-        status = events.isEmpty ? "Nothing scheduled today." : nil
+        status = events.isEmpty ? "Nothing scheduled this week." : nil
     }
 
     // MARK: - Subscription URL
@@ -203,7 +261,7 @@ final class CalendarSource {
         return text
     }
 
-    private func reloadFromURL(for day: Date) async {
+    private func reloadFromURL(_ range: DateInterval) async {
         let normalized = Self.normalize(subscriptionURL)
         guard !normalized.isEmpty else {
             events = []
@@ -245,7 +303,7 @@ final class CalendarSource {
                 return
             }
             cache(text)
-            apply(text, for: day)
+            apply(text, in: range)
         } catch {
             events = []
             status = "Couldn't reach the calendar: \(error.localizedDescription)"
@@ -272,14 +330,21 @@ final class CalendarSource {
 
     // MARK: - Local file
 
-    func chooseImport(at url: URL, for day: Date = Date()) {
+    func chooseImport(at url: URL) {
         importPath = url.path
-        reloadFromCachedFile(for: day)
+        startWatching(url)
+        reloadFromCachedFile(range)
+    }
+
+    /// Re-arms the folder watch after a relaunch.
+    func resumeWatching() {
+        guard backend == .file, let path = importPath else { return }
+        startWatching(URL(fileURLWithPath: path))
     }
 
     /// Re-reads the chosen path every time, so re-exporting into a watched
     /// folder is enough to bring the calendar up to date.
-    private func reloadFromCachedFile(for day: Date) {
+    private func reloadFromCachedFile(_ range: DateInterval) {
         guard let path = importPath else {
             events = []
             status = "Export your calendar from Google, then choose the .zip — or your Downloads folder."
@@ -288,7 +353,7 @@ final class CalendarSource {
         do {
             let text = try ICSImporter.read(URL(fileURLWithPath: path))
             cache(text)
-            apply(text, for: day)
+            apply(text, in: range)
         } catch {
             events = []
             status = error.localizedDescription
@@ -306,16 +371,34 @@ final class CalendarSource {
         try? text.write(to: cacheURL, atomically: true, encoding: .utf8)
     }
 
-    private func apply(_ text: String, for day: Date) {
-        events = ICS.events(from: text, on: day).map(DayEvent.init)
-        status = events.isEmpty ? "Nothing scheduled today." : nil
+    private func apply(_ text: String, in range: DateInterval) {
+        events = ICS.events(from: text, in: range).map(DayEvent.init)
+        status = events.isEmpty ? "Nothing scheduled this week." : nil
     }
 
     // MARK: - Derived
 
     /// The next meeting that hasn't finished — drives the bar badge (:857).
     var upNext: DayEvent? {
-        events.first { $0.end >= Date() }
+        todaysEvents.first { $0.end >= Date() }
+    }
+
+    /// Whole minutes until the next meeting starts; negative once under way.
+    var minutesUntilNext: Int? {
+        upNext.map { Int(($0.start.timeIntervalSinceNow / 60).rounded()) }
+    }
+
+    /// The bar badge: "now", "8m", "2h" (`badgeText`, :860).
+    var badgeText: String? {
+        guard let minutes = minutesUntilNext else { return nil }
+        if minutes <= 0 { return "now" }
+        return minutes < 60 ? "\(minutes)m" : "\(Int((Double(minutes) / 60).rounded()))h"
+    }
+
+    /// Whether the next meeting is close enough to interrupt for.
+    func isMeetingSoon(within lead: Int) -> Bool {
+        guard let minutes = minutesUntilNext, let event = upNext else { return false }
+        return minutes <= lead && event.end >= Date()
     }
 
     /// Distinct calendars in today's events, with counts (:943).

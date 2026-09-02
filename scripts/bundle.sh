@@ -19,9 +19,20 @@ cp "$BIN/Foglio" "$APP/Contents/MacOS/Foglio"
 
 # SwiftPM emits resources as a .bundle next to the binary; fold its contents
 # into Contents/Resources so Bundle.main can find them (fonts, etc).
-if [ -d "$BIN/Foglio_Foglio.bundle" ]; then
-  cp -R "$BIN/Foglio_Foglio.bundle/." "$APP/Contents/Resources/"
+# SwiftPM names it <package>_<target>.bundle. Copy it wholesale rather than
+# flattening it: Bundle.module looks for the bundle itself, not loose files.
+for res in "$BIN"/Foglio_*.bundle; do
+  [ -d "$res" ] && cp -R "$res" "$APP/Contents/Resources/"
+done
+
+# Icon: generated from scripts/make-icon.swift rather than committed as a
+# binary. Built once and reused, since compiling the script costs a few seconds.
+if [ ! -f "$ROOT/build/Foglio.icns" ]; then
+  ( cd "$ROOT" && swift scripts/make-icon.swift >/dev/null \
+      && iconutil -c icns build/Foglio.iconset -o build/Foglio.icns ) \
+    || echo "warning: could not build the app icon"
 fi
+[ -f "$ROOT/build/Foglio.icns" ] && cp "$ROOT/build/Foglio.icns" "$APP/Contents/Resources/Foglio.icns"
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
@@ -31,6 +42,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleName</key>              <string>Foglio</string>
   <key>CFBundleDisplayName</key>       <string>Foglio</string>
   <key>CFBundleExecutable</key>        <string>Foglio</string>
+  <key>CFBundleIconFile</key>          <string>Foglio</string>
   <key>CFBundleIdentifier</key>        <string>com.priyadharshan.foglio</string>
   <key>CFBundlePackageType</key>       <string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.1.0</string>

@@ -160,11 +160,11 @@ struct SettingsView: View {
                     selection: state.themeMode
                 ) { state.themeMode = $0 }
             }
-            settingRow("Bar edge", hint: "Which screen edge the strip clings to") {
+            settingRow("Bar edge", hint: "Or just drag the strip — it docks to the nearest edge") {
                 segmented(
-                    options: [("Left", BarSide.left), ("Right", BarSide.right)],
-                    selection: state.barSide
-                ) { state.barSide = $0 }
+                    options: BarEdge.allCases.map { ($0.label, $0) },
+                    selection: state.barEdge
+                ) { state.barEdge = $0 }
             }
         }
     }
@@ -180,6 +180,12 @@ struct SettingsView: View {
                     state.secondsRemaining = $0 * 60
                     state.timerRunning = false
                 }
+            }
+            settingRow("Meeting nudge", hint: "How early the bar starts counting down to your next meeting") {
+                segmented(
+                    options: [("5 min", 5), ("10 min", 10), ("15 min", 15)],
+                    selection: state.meetingLeadMinutes
+                ) { state.meetingLeadMinutes = $0 }
             }
             settingRow("Log completed tasks", hint: "Strike through, then write into today's log") {
                 segmented(
