@@ -3,16 +3,19 @@ import AppKit
 
 // Generates build/Foglio.icns.
 //
-// The mark is the design's own "Daylog" candidate (Name and Icon.dc.html:86) —
-// a ruled sheet with a tick — which suits Foglio, Italian for "sheet". It's
-// drawn here rather than committed as a binary so it stays reviewable and
-// regenerable, the same reasoning as the in-app icons.
+// The mark is the design's own "Margin" candidate (Name and Icon.dc.html:92) —
+// a ruled margin line with notes beside it, tagged "notes-first" — which fits
+// this app better than the previous "Daylog" sheet-and-tick mark once Notes
+// became the main surface. It's drawn here rather than committed as a binary
+// so it stays reviewable and regenerable, the same reasoning as the in-app
+// icons.
 //
-// Colours are the product palette: the app's ink as the ground, paper for the
-// sheet, and the amber accent on the tick so it reads at 16pt.
+// Colours and geometry are copied verbatim from the design's candidate list:
+// paper ground, ink strokes, amber dot marking where the margin line and the
+// middle note line meet.
 
+let paper = NSColor(srgbRed: 0xF7 / 255, green: 0xF8 / 255, blue: 0xF8 / 255, alpha: 1)
 let ink = NSColor(srgbRed: 0x1A / 255, green: 0x1E / 255, blue: 0x22 / 255, alpha: 1)
-let paper = NSColor(srgbRed: 0xF1 / 255, green: 0xF2 / 255, blue: 0xF3 / 255, alpha: 1)
 let amber = NSColor(srgbRed: 0xE0 / 255, green: 0x9A / 255, blue: 0x2B / 255, alpha: 1)
 
 /// Draws the mark in a 96x96 space, top-left origin (SVG convention).
@@ -25,27 +28,28 @@ func draw(into cg: CGContext, pixels: CGFloat) {
     let plate = CGRect(x: 7, y: 7, width: 82, height: 82)
     let rounded = CGPath(roundedRect: plate, cornerWidth: 20, cornerHeight: 20, transform: nil)
     cg.addPath(rounded)
-    cg.setFillColor(ink.cgColor)
+    cg.setFillColor(paper.cgColor)
     cg.fillPath()
 
-    cg.setLineWidth(5)
+    // The design uses a thicker stroke (7 vs. 5 units) once it's rendered
+    // small — at a uniform scale the four thin strokes thin out to under a
+    // pixel by 16x16 and the mark disappears.
+    cg.setLineWidth(pixels <= 32 ? 7 : 5)
     cg.setLineCap(.round)
     cg.setLineJoin(.round)
+    cg.setStrokeColor(ink.cgColor)
 
-    // Sheet body and its ruled header, plus the two tabs above it.
-    cg.setStrokeColor(paper.cgColor)
-    cg.addRect(CGRect(x: 24, y: 30, width: 48, height: 40))
-    cg.move(to: CGPoint(x: 24, y: 42)); cg.addLine(to: CGPoint(x: 72, y: 42))
-    cg.move(to: CGPoint(x: 36, y: 22)); cg.addLine(to: CGPoint(x: 36, y: 30))
-    cg.move(to: CGPoint(x: 60, y: 22)); cg.addLine(to: CGPoint(x: 60, y: 30))
+    // The margin rule, and three note lines beside it — "M36 20v56 M48 34h28
+    // M48 48h28 M48 62h18" (Name and Icon.dc.html:93).
+    cg.move(to: CGPoint(x: 36, y: 20)); cg.addLine(to: CGPoint(x: 36, y: 76))
+    cg.move(to: CGPoint(x: 48, y: 34)); cg.addLine(to: CGPoint(x: 76, y: 34))
+    cg.move(to: CGPoint(x: 48, y: 48)); cg.addLine(to: CGPoint(x: 76, y: 48))
+    cg.move(to: CGPoint(x: 48, y: 62)); cg.addLine(to: CGPoint(x: 66, y: 62))
     cg.strokePath()
 
-    // The one thing done.
-    cg.setStrokeColor(amber.cgColor)
-    cg.move(to: CGPoint(x: 36, y: 56))
-    cg.addLine(to: CGPoint(x: 42, y: 62))
-    cg.addLine(to: CGPoint(x: 54, y: 48))
-    cg.strokePath()
+    // Where you are on the margin — the one accent, sitting on the rule line.
+    cg.setFillColor(amber.cgColor)
+    cg.fillEllipse(in: CGRect(x: 30, y: 42, width: 12, height: 12))
 }
 
 func render(_ pixels: Int) -> Data? {
