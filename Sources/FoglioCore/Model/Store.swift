@@ -131,6 +131,17 @@ final class Store {
 
     func note(id: UUID) -> Note? { notes.first { $0.id == id } }
 
+    /// The bar's always-there quick-notes note — found by `id` and created
+    /// once if it doesn't exist yet, unlike the rest of Notes where every note
+    /// starts as a fresh untitled file.
+    @discardableResult
+    func quickNote(id: UUID) -> Note {
+        if let existing = note(id: id) { return existing }
+        let note = Note(id: id, title: "Quick notes", folder: .scratch)
+        upsert(note)
+        return note
+    }
+
     /// `debounced` keeps the in-memory value current immediately but delays the
     /// disk write. Use it while typing: writing a whole file per keystroke is
     /// both slow and what produced the orphaned-file bug.

@@ -3,16 +3,16 @@ import SwiftUI
 // The `ICONS` set from `Day Log.dc.html:629`, hand-ported from SVG path data.
 // All are authored in a 24x24 space and stroked at 1.7 with round caps/joins.
 //
-// Two of the source paths use arc commands (`settings` and `timer`); both are
-// full circles once decoded, so they become `addEllipse` rather than needing a
-// general arc-to-bezier conversion.
+// `settings`'s source path uses an arc command that's a full circle once
+// decoded, so it becomes `addEllipse` rather than needing a general
+// arc-to-bezier conversion.
 //
 // `chart` has no counterpart in the design: `Day Log.dc.html:882` references
 // `ICONS.chart` for the Weekly review rail item but the ICONS table never
 // defines it, so that icon renders empty upstream. This is our replacement.
 
 enum Icon: String, CaseIterable {
-    case capture, notes, tasks, settings, roadmap, week, folder, all, chart, timer, pin
+    case capture, notes, tasks, settings, roadmap, week, folder, all, chart, pin
 
     /// Builds the icon in a 24x24 coordinate space.
     private func build(into p: inout Path) {
@@ -71,10 +71,6 @@ enum Icon: String, CaseIterable {
             move(7, 20); line(7, 12)
             move(12, 20); line(12, 6)
             move(17, 20); line(17, 15)
-
-        case .timer: // M12 4a8 8 0 100 16 8 8 0 000-16 M12 8v4l3 2
-            circle(12, 12, 8)
-            move(12, 8); line(12, 12); line(15, 14)
 
         case .pin: // M9 4h6l-1 6 4 3H6l4-3-1-6 M12 13v7  (:156)
             move(9, 4); line(15, 4); line(14, 10); line(18, 13)

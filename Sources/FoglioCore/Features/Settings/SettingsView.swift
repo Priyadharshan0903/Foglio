@@ -39,7 +39,6 @@ struct SettingsView: View {
 
                 VStack(spacing: 14) {
                     shortcutsCard
-                    focusCard
                 }
                 .frame(width: 264)
             }
@@ -171,16 +170,6 @@ struct SettingsView: View {
 
     private var workGroup: some View {
         group("Work") {
-            settingRow("Focus block", hint: "Length of one pomodoro") {
-                segmented(
-                    options: [("15 min", 15), ("25 min", 25), ("45 min", 45)],
-                    selection: state.focusMinutes
-                ) {
-                    state.focusMinutes = $0
-                    state.secondsRemaining = $0 * 60
-                    state.timerRunning = false
-                }
-            }
             settingRow("Meeting nudge", hint: "How early the bar starts counting down to your next meeting") {
                 segmented(
                     options: [("5 min", 5), ("10 min", 10), ("15 min", 15)],
@@ -309,28 +298,4 @@ struct SettingsView: View {
         ]
     }
 
-    private var focusCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("FOCUS")
-                .font(Typo.sans(10))
-                .kerning(1.6)
-                .foregroundStyle(theme.muted)
-            Text("\(state.blocksCompleted) blocks today")
-                .font(Typo.sans(14, .medium))
-                .foregroundStyle(theme.text)
-                .padding(.top, 7)
-            Text(state.timerRunning ? "Running — \(state.mmss) left" : "\(state.focusMinutes)-minute blocks")
-                .font(Typo.sans(12))
-                .foregroundStyle(theme.muted)
-                .padding(.top, 3)
-        }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(theme.surface)
-        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-        .overlay(
-            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                .strokeBorder(theme.line, lineWidth: 1)
-        )
-    }
 }

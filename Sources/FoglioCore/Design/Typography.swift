@@ -95,6 +95,19 @@ enum Typo {
         return Font(ctFont)
     }
 
+    /// The `NSFont` equivalent of `sans(_:_:)` — for the rare `NSViewRepresentable`
+    /// (an `NSTextView`, say) that needs an AppKit font rather than a SwiftUI one.
+    /// `CTFont` is toll-free bridged to `NSFont`, so this is the same descriptor
+    /// construction as `instance(of:)`, just cast to the AppKit type.
+    static func sansNSFont(_ size: CGFloat, _ weight: Font.Weight = .regular) -> NSFont {
+        guard let sansFamily else { return .systemFont(ofSize: size) }
+        let descriptor = CTFontDescriptorCreateWithAttributes([
+            kCTFontFamilyNameAttribute: sansFamily,
+            kCTFontVariationAttribute: [weightAxis: axisValue(weight) as CFNumber] as CFDictionary,
+        ] as CFDictionary)
+        return CTFontCreateWithFontDescriptor(descriptor, size, nil) as NSFont
+    }
+
     /// The design only ever uses 400/500/600 (`Geist:wght@400;500;600`).
     private static func axisValue(_ weight: Font.Weight) -> CGFloat {
         switch weight {

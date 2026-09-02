@@ -15,7 +15,6 @@ struct WeekSummary: Equatable {
 
     var days: [Day] = []
     var entries: Int = 0
-    var focusBlocks: Int = 0
     var notes: Int = 0
 
     /// Bar height in points, matching the design's `(value / max) * 122 + 8`.
@@ -38,14 +37,12 @@ struct WeekSummary: Equatable {
 
         var days: [Day] = []
         var entries = 0
-        var focus = 0
 
         for offset in stride(from: 6, through: 0, by: -1) {
             guard let start = cal.date(byAdding: .day, value: -offset, to: today) else { continue }
             let onThisDay = log.filter { cal.isDate($0.at, inSameDayAs: start) }
 
             entries += onThisDay.count
-            focus += onThisDay.filter { $0.kind == .focus }.count
 
             days.append(Day(
                 id: offset,
@@ -55,6 +52,6 @@ struct WeekSummary: Equatable {
             ))
         }
 
-        return WeekSummary(days: days, entries: entries, focusBlocks: focus, notes: noteCount)
+        return WeekSummary(days: days, entries: entries, notes: noteCount)
     }
 }

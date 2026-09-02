@@ -108,6 +108,29 @@ func storeTests() {
         )
     }
 
+    Check.suite("Store — quick note") {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("foglio-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = Store(root: root)
+        store.load()
+        let countBeforeQuickNote = store.notes.count
+
+        let id = UUID()
+        let created = store.quickNote(id: id)
+        Check.equal(created.id, id, "the quick note is created with the requested id")
+        Check.equal(store.notes.count, countBeforeQuickNote + 1, "creating it adds exactly one note")
+
+        var edited = created
+        edited.body = "call back re: staging access"
+        store.upsert(edited)
+
+        let fetchedAgain = store.quickNote(id: id)
+        Check.equal(fetchedAgain.body, "call back re: staging access", "asking again returns the same note, not a fresh one")
+        Check.equal(store.notes.count, countBeforeQuickNote + 1, "asking again doesn't create a second note")
+    }
+
     Check.suite("Store — tasks and log") {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("foglio-test-\(UUID().uuidString)")

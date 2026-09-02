@@ -30,6 +30,19 @@ final class BarPanelController {
     /// Where the strip currently is, for anchoring the meeting nudge.
     var frame: NSRect { panel.frame }
 
+    /// The Notes icon's centre, in screen coordinates — so the quick-notes
+    /// card's pointer can aim at the actual icon rather than the strip's
+    /// middle. `notesIconFrame` is in SwiftUI's top-down local space over the
+    /// panel's own full bounds, so this flips it into AppKit's bottom-up
+    /// screen space.
+    var notesIconScreenCenter: CGPoint {
+        let local = state.notesIconFrame
+        return CGPoint(
+            x: panel.frame.origin.x + local.midX,
+            y: panel.frame.origin.y + (panel.frame.height - local.midY)
+        )
+    }
+
     /// Re-renders the strip with a new badge value.
     func updateBadge(_ badge: String?) {
         guard let onPick else { return }

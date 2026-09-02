@@ -105,7 +105,7 @@ enum Seed {
     static var log: [LogEntry] {
         [
             LogEntry(text: "Review platform RFC", kind: .task, at: today(9, 20)),
-            LogEntry(text: "Focus block — worker pool refactor", kind: .focus, at: today(10, 5)),
+            LogEntry(text: "Heads-down — worker pool refactor", kind: .manual, at: today(10, 5)),
             LogEntry(text: "Pairing with Arun on the Helm chart", kind: .manual, at: today(11, 40)),
         ]
     }

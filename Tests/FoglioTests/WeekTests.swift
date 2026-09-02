@@ -25,16 +25,15 @@ func weekTests() {
     Check.suite("Week summary — bucketing") {
         let log = [
             LogEntry(text: "a", kind: .task, at: daysAgo(0)),
-            LogEntry(text: "b", kind: .focus, at: daysAgo(0)),
+            LogEntry(text: "b", kind: .manual, at: daysAgo(0)),
             LogEntry(text: "c", kind: .manual, at: daysAgo(2)),
-            LogEntry(text: "d", kind: .focus, at: daysAgo(6)),
+            LogEntry(text: "d", kind: .manual, at: daysAgo(6)),
             // Outside the window — must be excluded from both bars and totals.
             LogEntry(text: "old", kind: .task, at: daysAgo(9)),
         ]
         let summary = WeekSummary.build(log: log, noteCount: 4, now: now)
 
         Check.equal(summary.entries, 4, "only entries inside the seven-day window count")
-        Check.equal(summary.focusBlocks, 2, "focus entries are counted separately")
         Check.equal(summary.notes, 4, "note count passes through")
         Check.equal(summary.days.last?.count, 2, "today's bar has two entries")
         Check.equal(summary.days.first?.count, 1, "six days ago has one")

@@ -70,13 +70,7 @@ struct WeekView: View {
                 value: week.entries,
                 label: "Entries logged",
                 color: theme.text,
-                note: "Notes, focus blocks and finished tasks."
-            )
-            tile(
-                value: week.focusBlocks,
-                label: "Focus blocks",
-                color: theme.accentDeep,
-                note: "\(state.focusMinutes)-minute blocks completed this week."
+                note: "Notes and finished tasks."
             )
             tile(
                 value: week.notes,

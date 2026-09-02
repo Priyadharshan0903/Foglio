@@ -18,8 +18,6 @@ struct BarView: View {
     var meetingBadge: String?
 
     @State private var hovered: Section?
-    @State private var hoveredTimer = false
-    @State private var pulsing = false
     @State private var isDragging = false
 
     private var theme: Theme { state.theme }
@@ -37,21 +35,24 @@ struct BarView: View {
             ForEach(Section.barItems) { item in
                 barButton(item)
             }
-            divider
-            timerButton
         }
         .padding(horizontal ? .horizontal : .vertical, 8)
         .padding(horizontal ? .vertical : .horizontal, 7)
+        // No scale-up while dragging: the panel is sized exactly to this
+        // view, so scaling it clipped at the panel bounds and added to
+        // the flicker. The closed-hand cursor carries the same feedback
+        // for free.
+        .gesture(dragGesture)
         .background(theme.raised)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: 12, style: .continuous)
                 .strokeBorder(theme.line, lineWidth: 1)
         )
-        // No scale-up while dragging: the panel is sized exactly to this view,
-        // so scaling it clipped at the panel bounds and added to the flicker.
-        // The closed-hand cursor carries the same feedback for free.
-        .gesture(dragGesture)
+        // Named so `barButton` can report the Notes icon's frame relative to
+        // the panel's own full bounds — what `QuickNotePanelController` needs
+        // to aim the card's pointer at the icon instead of the strip's middle.
+        .coordinateSpace(name: "barContent")
     }
 
     /// `minimumDistance` is what lets a plain click still reach the buttons
@@ -67,23 +68,6 @@ struct BarView: View {
                 NSCursor.openHand.set()
                 drag?.onEnded()
             }
-    }
-
-    @ViewBuilder
-    private var divider: some View {
-        if horizontal {
-            Rectangle()
-                .fill(theme.line)
-                .frame(width: 1)
-                .padding(.vertical, 4)
-                .padding(.horizontal, 2)
-        } else {
-            Rectangle()
-                .fill(theme.line)
-                .frame(height: 1)
-                .padding(.horizontal, 4)
-                .padding(.vertical, 2)
-        }
     }
 
     private func barButton(_ item: Section) -> some View {
@@ -116,38 +100,13 @@ struct BarView: View {
         .buttonStyle(.flat)
         .onHover { hovered = $0 ? item : (hovered == item ? nil : hovered) }
         .help(badgeHelp(for: item))
+        .onGeometryChange(for: CGRect.self) { $0.frame(in: .named("barContent")) } action: { frame in
+            if item == .notes { state.notesIconFrame = frame }
+        }
     }
 
     private func badgeHelp(for item: Section) -> String {
         guard item == .calendar, let badge = meetingBadge else { return item.label }
         return "Next meeting \(badge == "now" ? "now" : "in \(badge)")"
-    }
-
-    private var timerButton: some View {
-        Button {
-            state.toggleTimer()
-        } label: {
-            IconView(icon: .timer)
-                .foregroundStyle(state.timerRunning ? theme.accentDeep : theme.muted)
-                .frame(width: 34, height: 34)
-                .background(
-                    RoundedRectangle(cornerRadius: 8, style: .continuous)
-                        .fill(hoveredTimer ? theme.accentSoft : .clear)
-                )
-                // `dl-pulse 2s ease-in-out infinite` while running (:64)
-                .opacity(state.timerRunning && pulsing ? 0.35 : 1)
-                .animation(
-                    state.timerRunning
-                        ? .easeInOut(duration: 1).repeatForever(autoreverses: true)
-                        : .default,
-                    value: pulsing
-                )
-        }
-        .buttonStyle(.flat)
-        .onHover { hoveredTimer = $0 }
-        .help(state.timerRunning ? "Pause focus" : "Start focus")
-        .onChange(of: state.timerRunning) { _, running in
-            pulsing = running
-        }
     }
 }

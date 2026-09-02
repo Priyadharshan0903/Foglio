@@ -27,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private let calendar = CalendarSource()
     private var bar: BarPanelController?
     private var meetingAlert: MeetingAlertPanel?
+    private var quickNotePanel: QuickNotePanelController?
     private var window: NSWindow?
     private var ticker: Timer?
     private var calendarTimer: Timer?
@@ -37,15 +38,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         Typo.registerBundledFonts()
         Debug.log("fonts: geist=\(Typo.geistAvailable) sample=\(Typo.describeResolved())")
         store.load()
+        // Created up front rather than lazily the first time the bar's quick
+        // panel renders — a disk write belongs in the load path, not as a
+        // side effect of a SwiftUI view body evaluating.
+        store.quickNote(id: state.quickNoteId)
         calendar.refreshAccess()
         calendar.resumeWatching()
         startCalendarRefresh()
 
         bar = BarPanelController(state: state) { [weak self] section in
-            self?.state.section = section
-            self?.showMainWindow()
+            guard let self else { return }
+            // Notes is the one icon that pops a card beside the bar instead
+            // of opening the full window — see `toggleQuickNote()`.
+            if section == .notes {
+                self.toggleQuickNote()
+            } else {
+                self.state.section = section
+                self.showMainWindow()
+            }
         }
         meetingAlert = MeetingAlertPanel(state: state)
+        quickNotePanel = QuickNotePanelController(state: state, store: store)
 
         // Under FOGLIO_DEBUG, lay the (hidden) bar out at launch so its geometry
         // can be inspected without having to close the window first — automation
@@ -103,6 +116,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         showMainWindow()
     }
 
+    /// Notes, clicked from the bar, opens a small card beside the strip
+    /// instead of the full window — see `QuickNotePanelController`.
+    private func toggleQuickNote() {
+        guard let bar else { return }
+        quickNotePanel?.toggle(besides: bar.frame, pointerAt: bar.notesIconScreenCenter) { [weak self] in
+            self?.state.section = .notes
+            self?.showMainWindow()
+        }
+    }
+
     /// ⌘⇧N — new note in Scratch (:1225).
     private func newScratchNote() {
         let note = store.newNote(in: .scratch)
@@ -132,11 +155,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func startTicker() {
         ticker = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
-                guard let self else { return }
-                if self.state.tick() {
-                    self.store.addLog(LogEntry(text: "Focus block complete", kind: .focus))
-                }
-                self.refreshMeetingNudge()
+                self?.refreshMeetingNudge()
             }
         }
     }
@@ -157,6 +176,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     func windowDidDeminiaturize(_ notification: Notification) {
         bar?.hide()
+        quickNotePanel?.hide()
     }
 
     /// Keeps the calendar badge and the meeting nudge in step, once a second.
@@ -223,6 +243,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func showMainWindow() {
         bar?.hide()
         meetingAlert?.hide()
+        quickNotePanel?.hide()
 
         if let window {
             window.makeKeyAndOrderFront(nil)

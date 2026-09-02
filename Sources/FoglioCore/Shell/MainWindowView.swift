@@ -56,15 +56,6 @@ struct MainWindowView: View {
             Spacer(minLength: 12)
 
             searchField
-
-            if state.timerRunning {
-                Text(state.mmss)
-                    .font(Typo.mono(13.5))
-                    .foregroundStyle(theme.accentDeep)
-                    .monospacedDigit()
-            }
-
-            focusButton
         }
         .padding(.horizontal, 15)
         .frame(height: Self.headerHeight)
@@ -119,26 +110,6 @@ struct MainWindowView: View {
         .applying(CGAffineTransform(scaleX: 13.0 / 24, y: 13.0 / 24))
         .stroke(theme.muted, style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
         .frame(width: 13, height: 13)
-    }
-
-    private var focusButton: some View {
-        Button {
-            state.toggleTimer()
-        } label: {
-            Text(state.timerRunning ? "PAUSE" : "FOCUS")
-                .font(Typo.sans(11, .semibold))
-                .kerning(0.44)
-                .foregroundStyle(state.timerRunning ? theme.text : theme.onAccent)
-                .padding(.horizontal, 11)
-                .padding(.vertical, 6)
-                .background(state.timerRunning ? Color.clear : theme.accent)
-                .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: 7, style: .continuous)
-                        .strokeBorder(theme.line, lineWidth: 1)
-                )
-        }
-        .buttonStyle(.flat)
     }
 
     private var dateLabel: String {
