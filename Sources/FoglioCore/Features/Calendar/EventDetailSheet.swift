@@ -13,6 +13,11 @@ struct EventDetailSheet: View {
     var onAddFollowUp: () -> Void
     var onClose: () -> Void
 
+    /// Long guest lists (30+ on a company all-hands) would otherwise dominate
+    /// the sheet; collapsed to a preview by default with a "+N more" toggle.
+    @State private var showAllGuests = false
+    private let guestPreviewCount = 6
+
     private var theme: Theme { state.theme }
 
     var body: some View {
@@ -20,19 +25,27 @@ struct EventDetailSheet: View {
             header
             Divider().overlay(theme.line)
 
-            VStack(alignment: .leading, spacing: 14) {
-                row("When", value: whenText, mono: false)
-                row("Where", value: event.location, mono: false)
-                row("Calendar", value: event.calendar, mono: false)
-                row("Organizer", value: event.organizer, mono: false)
-                if !event.attendees.isEmpty { guests }
+            // A plain VStack here had no ceiling: a long guest list pushed the
+            // sheet past the bottom of the screen with nothing to scroll it
+            // back into view. The ScrollView caps growth at maxHeight and
+            // `minHeight` keeps a short event (no guests) from looking
+            // squashed against the header/actions bars.
+            ScrollView {
+                VStack(alignment: .leading, spacing: 14) {
+                    row("When", value: whenText, mono: false)
+                    row("Where", value: event.location, mono: false)
+                    row("Calendar", value: event.calendar, mono: false)
+                    row("Organizer", value: event.organizer, mono: false)
+                    if !event.attendees.isEmpty { guests }
+                }
+                .padding(.horizontal, 22).padding(.vertical, 18)
             }
-            .padding(.horizontal, 22).padding(.vertical, 18)
+            .frame(minHeight: 180, maxHeight: 460)
 
             Divider().overlay(theme.line)
             actions
         }
-        .frame(width: 420)
+        .frame(width: 480)
         .background(theme.bg)
         .environment(\.theme, theme)
         .preferredColorScheme(state.themeMode == .dark ? .dark : .light)
@@ -96,27 +109,48 @@ struct EventDetailSheet: View {
 
     private var guests: some View {
         HStack(alignment: .top, spacing: 14) {
-            Text("Guests")
+            Text("Guests (\(event.attendees.count))")
                 .font(Typo.sans(11))
                 .foregroundStyle(theme.muted)
                 .frame(width: 70, alignment: .leading)
-            FlowLayout(spacing: 6, lineSpacing: 6) {
-                ForEach(event.attendees, id: \.self) { name in
-                    HStack(spacing: 6) {
-                        Text(String(name.prefix(1)).uppercased())
-                            .font(Typo.sans(9.5, .semibold))
-                            .foregroundStyle(theme.accentDeep)
-                            .frame(width: 18, height: 18)
-                            .background(theme.accentSoft)
-                            .clipShape(Circle())
-                        Text(name).font(Typo.sans(11.5)).foregroundStyle(theme.text)
+
+            VStack(alignment: .leading, spacing: 8) {
+                FlowLayout(spacing: 6, lineSpacing: 6) {
+                    ForEach(visibleAttendees, id: \.self) { name in
+                        guestChip(name)
                     }
-                    .padding(.leading, 3).padding(.trailing, 8).padding(.vertical, 3)
-                    .background(theme.field)
-                    .clipShape(Capsule())
+                }
+                if event.attendees.count > guestPreviewCount {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.15)) { showAllGuests.toggle() }
+                    } label: {
+                        Text(showAllGuests ? "Show fewer" : "+\(event.attendees.count - guestPreviewCount) more")
+                            .font(Typo.sans(11, .medium))
+                            .foregroundStyle(theme.accentDeep)
+                    }
+                    .buttonStyle(.flat)
                 }
             }
         }
+    }
+
+    private var visibleAttendees: [String] {
+        showAllGuests ? event.attendees : Array(event.attendees.prefix(guestPreviewCount))
+    }
+
+    private func guestChip(_ name: String) -> some View {
+        HStack(spacing: 6) {
+            Text(String(name.prefix(1)).uppercased())
+                .font(Typo.sans(9.5, .semibold))
+                .foregroundStyle(theme.accentDeep)
+                .frame(width: 18, height: 18)
+                .background(theme.accentSoft)
+                .clipShape(Circle())
+            Text(name).font(Typo.sans(11.5)).foregroundStyle(theme.text)
+        }
+        .padding(.leading, 3).padding(.trailing, 8).padding(.vertical, 3)
+        .background(theme.field)
+        .clipShape(Capsule())
     }
 
     private var actions: some View {
