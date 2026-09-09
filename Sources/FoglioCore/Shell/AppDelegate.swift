@@ -100,7 +100,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 self?.showMainWindow()
                 self?.state.searchFocusRequests += 1
             },
-            onSettings: { [weak self] in self?.go(.settings) }
+            onSettings: { [weak self] in self?.go(.settings) },
+            onToggleSource: { [weak self] in
+                guard let self else { return }
+                self.showMainWindow()
+                self.state.section = .notes
+                self.state.sourceMode.toggle()
+            }
         )
     }
 

@@ -108,6 +108,16 @@ enum Typo {
         return CTFontCreateWithFontDescriptor(descriptor, size, nil) as NSFont
     }
 
+    /// The `NSFont` equivalent of `mono(_:_:)`, for the source editor.
+    static func monoNSFont(_ size: CGFloat, _ weight: Font.Weight = .regular) -> NSFont {
+        guard let monoFamily else { return .monospacedSystemFont(ofSize: size, weight: .regular) }
+        let descriptor = CTFontDescriptorCreateWithAttributes([
+            kCTFontFamilyNameAttribute: monoFamily,
+            kCTFontVariationAttribute: [weightAxis: axisValue(weight) as CFNumber] as CFDictionary,
+        ] as CFDictionary)
+        return CTFontCreateWithFontDescriptor(descriptor, size, nil) as NSFont
+    }
+
     /// The design only ever uses 400/500/600 (`Geist:wght@400;500;600`).
     private static func axisValue(_ weight: Font.Weight) -> CGFloat {
         switch weight {

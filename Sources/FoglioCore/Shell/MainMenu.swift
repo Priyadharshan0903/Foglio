@@ -13,7 +13,8 @@ enum MainMenu {
         onNewNote: @escaping () -> Void,
         onTasks: @escaping () -> Void,
         onSearch: @escaping () -> Void,
-        onSettings: @escaping () -> Void
+        onSettings: @escaping () -> Void,
+        onToggleSource: @escaping () -> Void
     ) {
         let main = NSMenu()
 
@@ -65,6 +66,9 @@ enum MainMenu {
         let viewItem = NSMenuItem()
         let viewMenu = NSMenu(title: "View")
         viewMenu.addItem(action(title: "Tasks", key: "t", modifiers: [.command, .shift], handler: onTasks))
+        viewMenu.addItem(
+            action(title: "Markdown Source", key: "m", modifiers: [.command, .shift], handler: onToggleSource)
+        )
         viewItem.submenu = viewMenu
         main.addItem(viewItem)
 

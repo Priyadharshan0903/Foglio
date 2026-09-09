@@ -87,6 +87,15 @@ final class AppState {
     var moreOpen = false
     var pinOpen = false
 
+    /// Whether the editor shows the note as one markdown document rather than
+    /// as a stack of blocks.
+    ///
+    /// Persisted, and app-wide rather than per-note: it isn't a property of a
+    /// note, it's how you like to write. Someone who wants a real text field —
+    /// selection that runs the length of the note, a caret that lands where
+    /// they clicked, one undo stack — wants it for the next note too.
+    var sourceMode = false { didSet { defaults.set(sourceMode, forKey: "sourceMode") } }
+
     /// Notes ticked in the list, and whether the list is showing its
     /// checkboxes at all.
     ///
@@ -162,6 +171,9 @@ final class AppState {
         }
         if defaults.object(forKey: "meetingLead") != nil {
             meetingLeadMinutes = defaults.integer(forKey: "meetingLead")
+        }
+        if defaults.object(forKey: "sourceMode") != nil {
+            sourceMode = defaults.bool(forKey: "sourceMode")
         }
         if defaults.object(forKey: "autoLog") != nil {
             autoLog = defaults.bool(forKey: "autoLog")

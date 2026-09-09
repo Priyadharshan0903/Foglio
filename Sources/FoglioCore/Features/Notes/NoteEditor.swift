@@ -20,6 +20,11 @@ struct NoteEditor: View {
     /// Set while we move focus ourselves (Return, Backspace) so the resulting
     /// blur doesn't immediately cancel the move.
     @State private var movingFocus = false
+    /// The whole note's markdown while source mode is on.
+    ///
+    /// Local for the same reason `draft` is: the text view must be fed what was
+    /// just typed, not whatever the store has got round to storing.
+    @State private var source: String = ""
 
     private var theme: Theme { state.theme }
 
@@ -33,16 +38,38 @@ struct NoteEditor: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header(blockCount: blocks.count)
-                toolbar(blocks: blocks)
-                blockStack(blocks, numbers: numbers)
+                if state.sourceMode {
+                    sourceBar
+                    sourceEditor
+                } else {
+                    toolbar(blocks: blocks)
+                    blockStack(blocks, numbers: numbers)
+                }
             }
         }
         .onChange(of: state.activeBlock, initial: true) { _, index in
             guard let index, index < blocks.count else { return }
             draft = editableText(at: index, in: blocks)
         }
+        .onAppear { source = storedBody }
         .onChange(of: note.id) { _, _ in
             state.activeBlock = nil
+            source = storedBody
+        }
+        // Deliberately not `initial: true`: on first appear `source` is still
+        // empty, and the off-branch would read that as "the note was emptied"
+        // and write the blank over the file.
+        .onChange(of: state.sourceMode) { _, on in
+            if on {
+                // A block left mid-edit hasn't reached the note yet, and the
+                // source editor is drawn from the note — without this, the line
+                // being typed is simply missing from the text you're handed.
+                finishEditing(note.blocks)
+                source = storedBody
+            } else {
+                commitSource()
+                store.flushPendingSaves()
+            }
         }
     }
 
@@ -68,6 +95,7 @@ struct NoteEditor: View {
                         .foregroundStyle(theme.muted)
                         .fixedSize()
                     pinMenu
+                    sourceToggle
                 }
                 Spacer(minLength: 8)
                 deleteButton
@@ -135,6 +163,141 @@ struct NoteEditor: View {
         .help("Move this note to another folder")
     }
 
+    /// Switches between the block editor and the whole note as markdown.
+    ///
+    /// Blocks are one text view at a time, which is what makes a selection stop
+    /// at the end of a paragraph and a caret land at the end of the line rather
+    /// than where you clicked. Source mode is a single text view over the whole
+    /// note, so selection, ⌘A, click-to-place and one undo stack all run the
+    /// length of the document.
+    private var sourceToggle: some View {
+        Button { state.sourceMode.toggle() } label: {
+            HStack(spacing: 5) {
+                Text(state.sourceMode ? "¶" : "##")
+                    .font(Typo.mono(10.5, .medium))
+                Text(state.sourceMode ? "Blocks" : "Markdown")
+                    .font(Typo.sans(11))
+                    .lineLimit(1)
+            }
+            .foregroundStyle(state.sourceMode ? theme.accentDeep : theme.muted)
+            .padding(.horizontal, 9).padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(state.sourceMode ? theme.accentSoft : .clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(theme.line, lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.flat)
+        .fixedSize()
+        .help(state.sourceMode
+            ? "Back to blocks (⇧⌘M)"
+            : "Edit the whole note as one piece of markdown — selection, ⌘A and undo run the length of it (⇧⌘M)")
+    }
+
+    // MARK: - Source mode
+
+    /// Stands in for the formatting toolbar, so the editor doesn't jump when
+    /// you switch modes. The buttons themselves are gone: they act on a block,
+    /// and here you type the markdown instead — which the row spells out.
+    private var sourceBar: some View {
+        barChrome(
+            HStack(spacing: 8) {
+                Text("Markdown source")
+                    .font(Typo.sans(10.5, .medium))
+                    .kerning(0.4)
+                    .foregroundStyle(theme.accentDeep)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(theme.accentSoft)
+                    .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
+                Spacer(minLength: 8)
+                Text("## · - · 1. · - [ ] · ```")
+                    .font(Typo.mono(10.5))
+                    .foregroundStyle(theme.muted)
+                    .fixedSize()
+                    .help("Type these directly — they render when you switch back to blocks")
+            }
+        )
+    }
+
+    private var sourceEditor: some View {
+        ZStack(alignment: .topLeading) {
+            RawTextEditor(
+                text: sourceBinding,
+                font: Typo.monoNSFont(13),
+                textColor: NSColor(theme.text),
+                allowsNewlines: true,
+                lineSpacing: 5,
+                caretAtEnd: false,
+                minHeight: 420,
+                escapeResignsFocus: true,
+                onEnter: {},
+                onBackspaceWhenEmpty: {},
+                onEscape: { store.flushPendingSaves() },
+                onBlur: { store.flushPendingSaves() }
+            )
+
+            if source.isEmpty {
+                // `NSTextView` has no placeholder of its own, and an empty note
+                // in this mode is otherwise a blank pane with no hint that it
+                // is a markdown field.
+                Text("Write in markdown — ## for a heading, - for a bullet, - [ ] for a task")
+                    .font(Typo.mono(13))
+                    .foregroundStyle(theme.muted)
+                    .allowsHitTesting(false)
+            }
+        }
+        .padding(.horizontal, 26)
+        .padding(.top, 20).padding(.bottom, 34)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    /// Feeds the text view from `source` and saves as you type.
+    ///
+    /// The getter deliberately reads the local copy rather than the note: a
+    /// getter that went back through the store could hand `updateNSView` a
+    /// value one keystroke behind and overwrite what had just been typed —
+    /// the same trap `draft` exists to avoid.
+    private var sourceBinding: Binding<String> {
+        Binding(
+            get: { source },
+            set: { text in
+                source = text
+                commitSource(text, debounced: true)
+            }
+        )
+    }
+
+    private func commitSource(_ text: String? = nil, debounced: Bool = false) {
+        let body = text ?? source
+        // Built from the store's copy rather than from `note`, which was
+        // captured when this view was last built. Source saves are debounced
+        // and the title's are too, so writing a stale `note` back here could
+        // undo a title typed between two keystrokes of the body.
+        guard var updated = store.notes.first(where: { $0.id == note.id }),
+              body != updated.body
+        else { return }
+        // Assigns `body`, not `blocks`. Going through the block round-trip
+        // would tidy the text on the way past — `1)` becoming `1.`, a numbered
+        // run renumbering itself, a compact table gaining spaces — and an
+        // editor that rewrites what you typed is not a source editor.
+        updated.body = body
+        store.upsert(updated, debounced: debounced)
+    }
+
+    /// The note's markdown as the store has it *now*.
+    ///
+    /// Not `note.body`: switching into source mode commits the block being
+    /// edited first, and `note` is the value this view was built with — so it
+    /// still holds the text from before that commit, and seeding the editor
+    /// from it would drop the line you had just typed.
+    private var storedBody: String {
+        store.notes.first { $0.id == note.id }?.body ?? note.body
+    }
+
     private var pinMenu: some View {
         Menu {
             Button("Not pinned") { setPin(nil) }
@@ -196,8 +359,20 @@ struct NoteEditor: View {
         return Format.of(blocks[index])
     }
 
+    /// The rule-topped strip under the header, shared by the block toolbar and
+    /// the source bar so the editor doesn't shift when you switch modes.
+    private func barChrome(_ content: some View) -> some View {
+        content
+            .padding(.horizontal, 26)
+            .padding(.vertical, 10)
+            .background(theme.surface)
+            .overlay(alignment: .top) { Rectangle().fill(theme.line).frame(height: 1) }
+            .overlay(alignment: .bottom) { Rectangle().fill(theme.line).frame(height: 1) }
+            .padding(.top, 14)
+    }
+
     private func toolbar(blocks: [Block]) -> some View {
-        HStack(alignment: .top, spacing: 8) {
+        barChrome(HStack(alignment: .top, spacing: 8) {
             // Wraps rather than truncates. The six buttons plus the tag want
             // ~500pt, and the editor pane is only ~380pt wide at the window's
             // 900pt minimum — as a plain HStack the labels got clipped there.
@@ -244,13 +419,7 @@ struct NoteEditor: View {
                     .fixedSize()
                     .help("Markdown shortcuts you can type directly")
             }
-        }
-        .padding(.horizontal, 26)
-        .padding(.vertical, 10)
-        .background(theme.surface)
-        .overlay(alignment: .top) { Rectangle().fill(theme.line).frame(height: 1) }
-        .overlay(alignment: .bottom) { Rectangle().fill(theme.line).frame(height: 1) }
-        .padding(.top, 14)
+        })
     }
 
     private func toolbarButton(_ label: String, hint: String, action: @escaping () -> Void) -> some View {
