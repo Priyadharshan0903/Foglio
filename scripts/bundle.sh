@@ -7,7 +7,9 @@ CONFIG="${1:-debug}"
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-swift build -c "$CONFIG"
+# Just the app product. Building everything drags in the FoglioTests target,
+# whose `@testable import` fails under -c release, where testability is off.
+swift build -c "$CONFIG" --product Foglio
 
 BIN="$(swift build -c "$CONFIG" --show-bin-path)"
 APP="$ROOT/build/Foglio.app"

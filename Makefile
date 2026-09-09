@@ -1,4 +1,4 @@
-.PHONY: build run test bundle app clean
+.PHONY: build run test bundle app dmg install clean
 
 build:
 	swift build
@@ -18,6 +18,15 @@ bundle:
 
 app: bundle
 	@open build/Foglio.app
+
+# A release build wrapped in a drag-to-install disk image.
+dmg:
+	@./scripts/dmg.sh release
+
+# Replaces the copy in ~/Applications from that image. No admin rights needed:
+# /Applications is writable only by the admin group, ~/Applications by you.
+install: dmg
+	@./scripts/install.sh
 
 clean:
 	rm -rf .build build
