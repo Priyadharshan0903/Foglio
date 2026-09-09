@@ -6,6 +6,7 @@ func markdownTests() {
         roundTrip(.h2("What actually runs"), "## What actually runs")
         roundTrip(.paragraph("The controller's job is to make the world match."), "The controller's job is to make the world match.")
         roundTrip(.listItem("one thing"), "- one thing")
+        roundTrip(.orderedItem("first thing"), "1. first thing")
         roundTrip(.todo(text: "Write the finalizer path", checked: false), "- [ ] Write the finalizer path")
         roundTrip(.todo(text: "Re-read informer internals", checked: true), "- [x] Re-read informer internals")
         roundTrip(.divider, "---")
@@ -42,6 +43,76 @@ func markdownTests() {
         Check.equal(Markdown.parse(tableMd), [table], "table re-parses identically")
     }
 
+    Check.suite("Numbered lists — the number comes from position") {
+        let list: [Block] = [
+            .orderedItem("Drain the node"),
+            .orderedItem("Wait for the informer to resync"),
+            .orderedItem("Uncordon"),
+        ]
+        Check.equal(
+            Markdown.serialize(list),
+            "1. Drain the node\n2. Wait for the informer to resync\n3. Uncordon",
+            "consecutive items are numbered 1, 2, 3"
+        )
+
+        // The point of not storing the number: inserting in the middle must not
+        // require touching any other item.
+        var edited = list
+        edited.insert(.orderedItem("Cordon"), at: 0)
+        Check.expect(
+            Markdown.serialize(edited).hasPrefix("1. Cordon\n2. Drain the node\n3. "),
+            "inserting at the top renumbers everything below it"
+        )
+
+        // A run is broken by anything that isn't a numbered item.
+        let twoLists: [Block] = [
+            .orderedItem("one"),
+            .orderedItem("two"),
+            .paragraph("Then, separately:"),
+            .orderedItem("one again"),
+        ]
+        Check.equal(
+            Markdown.serialize(twoLists),
+            "1. one\n2. two\nThen, separately:\n1. one again",
+            "a paragraph between two lists restarts the count"
+        )
+        Check.equal(
+            Markdown.ordinals(of: twoLists),
+            [1, 2, nil, 1],
+            "ordinals report the same numbering the file gets"
+        )
+    }
+
+    Check.suite("Numbered lists — reading them back") {
+        // Markdown's "lazy numbering": a hand-written file that says 1. 1. 1.
+        // is a three-item list, and we renumber it on the way back out.
+        Check.equal(
+            Markdown.serialize(Markdown.parse("1. one\n1. two\n1. three")),
+            "1. one\n2. two\n3. three",
+            "lazily-numbered input is renumbered on write"
+        )
+        Check.equal(
+            Markdown.parse("7) seven"),
+            [.orderedItem("seven")],
+            "the ')' marker CommonMark allows is accepted too"
+        )
+        Check.equal(
+            Markdown.parse("1.no space"),
+            [.paragraph("1.no space")],
+            "a marker needs its space, so '1.no space' stays prose"
+        )
+        Check.equal(
+            Markdown.parse("2026. A year to remember"),
+            [.orderedItem("A year to remember")],
+            "a four-digit marker is still a marker — as in CommonMark"
+        )
+        Check.equal(
+            Markdown.parse("1234567890. too many digits"),
+            [.paragraph("1234567890. too many digits")],
+            "but past 9 digits it stays a paragraph"
+        )
+    }
+
     Check.suite("Markdown — whole note round-trip") {
         // The verification step from the plan: every block type, serialize ->
         // parse -> serialize, byte-identical.
@@ -53,6 +124,8 @@ func markdownTests() {
             .todo(text: "Re-read informer / workqueue internals", checked: true),
             .todo(text: "Write the finalizer path", checked: false),
             .listItem("a plain bullet"),
+            .orderedItem("a first step"),
+            .orderedItem("a second step"),
             .table(rows: [["Event", "Requeue"], ["Spec change", "immediate"]]),
             .image(alt: "controller-runtime diagram", path: ""),
             .divider,
@@ -78,6 +151,23 @@ func markdownTests() {
             Markdown.applyEdit("- [ ] now a todo", to: .paragraph("was a paragraph")),
             .todo(text: "now a todo", checked: false),
             "typing '- [ ] ' converts to a todo"
+        )
+        Check.equal(
+            Markdown.applyEdit("1. now a numbered item", to: .paragraph("was a paragraph")),
+            .orderedItem("now a numbered item"),
+            "typing '1. ' converts to a numbered item"
+        )
+        Check.equal(
+            Markdown.applyEdit("- now a bullet", to: .orderedItem("was numbered")),
+            .listItem("now a bullet"),
+            "a numbered item can be retyped as a bullet"
+        )
+        // The number is positional, so whatever you type in front is discarded
+        // rather than stored and later contradicted by the item's position.
+        Check.equal(
+            Markdown.applyEdit("9. renumbered by position", to: .orderedItem("old")),
+            .orderedItem("renumbered by position"),
+            "the typed number is not kept on the block"
         )
         // Code keeps its type instead of re-deriving it, so typing '# ' inside a
         // code block stays code (the design's `prev` guard, :740).

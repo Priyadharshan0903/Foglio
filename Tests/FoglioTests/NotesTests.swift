@@ -50,6 +50,16 @@ func notesTests() {
             "a todo can be the snippet when there's no paragraph"
         )
 
+        let numbered = Note(body: Markdown.serialize([
+            .orderedItem("Drain the node"),
+            .paragraph("The order matters here."),
+        ]))
+        Check.equal(
+            numbered.snippet,
+            "The order matters here.",
+            "a numbered item is a list, not a snippet"
+        )
+
         let empty = Note(body: Markdown.serialize([.h1("Only a heading")]))
         Check.equal(empty.snippet, "", "a note with no body text has an empty snippet")
     }
@@ -101,6 +111,81 @@ func editorPlaceholderTests() {
             NoteEditor.needsPlaceholder([.code(language: "go", text: "")]),
             "a trailing code block still offers the placeholder"
         )
+    }
+
+    Check.suite("Editor — Return continues a list") {
+        // Without this you'd click "Bullets" once per line.
+        Check.equal(
+            NoteEditor.continuation(after: .listItem("a bullet")),
+            .listItem(""),
+            "Return in a bullet gives you another bullet"
+        )
+        Check.equal(
+            NoteEditor.continuation(after: .orderedItem("a step")),
+            .orderedItem(""),
+            "Return in a numbered item gives you the next one"
+        )
+        Check.equal(
+            NoteEditor.continuation(after: .todo(text: "a task", checked: false)),
+            .todo(text: "", checked: false),
+            "a checklist continues too — it's a list with a box for a marker"
+        )
+        // A finished todo shouldn't hand you a pre-ticked next one.
+        Check.equal(
+            NoteEditor.continuation(after: .todo(text: "done", checked: true)),
+            .todo(text: "", checked: false),
+            "the next checklist item starts unchecked"
+        )
+        Check.equal(
+            NoteEditor.continuation(after: .paragraph("prose")),
+            .paragraph(""),
+            "ordinary prose still just gets a new paragraph"
+        )
+
+        // An empty item is how you say you're done with the list. Adding
+        // another empty bullet there would mean deleting it by hand every time.
+        Check.expect(
+            NoteEditor.continuation(after: .listItem("")) == nil,
+            "Return in an empty bullet ends the list"
+        )
+        Check.expect(
+            NoteEditor.continuation(after: .orderedItem("")) == nil,
+            "Return in an empty numbered item ends the list"
+        )
+        Check.expect(
+            NoteEditor.continuation(after: .todo(text: "", checked: false)) == nil,
+            "Return in an empty checklist item ends the list"
+        )
+        // ...but an empty paragraph is not a list, so Return keeps adding lines.
+        Check.equal(
+            NoteEditor.continuation(after: .paragraph("")),
+            .paragraph(""),
+            "an empty paragraph still adds another line"
+        )
+    }
+
+    Check.suite("Editor — typing a numbered list end to end") {
+        // The sequence a user performs: click "Numbered", type, Return, type,
+        // Return, type, Return on the empty item to finish.
+        var blocks: [Block] = [.paragraph("Rollout steps:"), .orderedItem("Cordon")]
+        for text in ["Drain", "Upgrade kubelet"] {
+            guard let next = NoteEditor.continuation(after: blocks[blocks.count - 1]) else { break }
+            blocks.append(next)
+            blocks[blocks.count - 1] = .orderedItem(text)
+        }
+        Check.expect(
+            NoteEditor.continuation(after: .orderedItem("")) == nil,
+            "the last Return ends the list"
+        )
+        blocks.append(.paragraph("Then verify."))
+
+        let md = Markdown.serialize(blocks)
+        Check.equal(
+            md,
+            "Rollout steps:\n1. Cordon\n2. Drain\n3. Upgrade kubelet\nThen verify.",
+            "the note on disk is ordinary, readable markdown"
+        )
+        Check.equal(Markdown.parse(md), blocks, "and it reads back as the same blocks")
     }
 
     Check.suite("Editor — the gap that was reported") {

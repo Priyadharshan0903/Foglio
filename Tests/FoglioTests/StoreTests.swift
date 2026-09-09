@@ -257,4 +257,58 @@ func renameTests() {
             .filter { $0.hasPrefix("hel") }
         Check.equal(remaining.count, 1, "the stale files are deleted from disk")
     }
+
+    Check.suite("Deleting a note") {
+        let (store, root) = freshStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let notesDir = root.appendingPathComponent("notes")
+
+        func fileCount() -> Int {
+            ((try? FileManager.default.contentsOfDirectory(atPath: notesDir.path)) ?? [])
+                .filter { $0.hasSuffix(".md") }.count
+        }
+
+        let before = fileCount()
+        var note = store.newNote(in: .scratch)
+        note.title = "Throwaway"
+        store.upsert(note)
+        Check.equal(fileCount(), before + 1, "the note has a file to begin with")
+
+        store.deleteNote(id: note.id)
+        Check.expect(store.note(id: note.id) == nil, "the note is gone from memory")
+        Check.equal(fileCount(), before, "and its file is gone from disk")
+
+        // The bug this guards: a delete that only drops the in-memory copy
+        // leaves the file behind, so the note reappears on next launch.
+        let reopened = Store(root: root)
+        reopened.load()
+        Check.expect(
+            !reopened.notes.contains { $0.id == note.id },
+            "it does not come back on reload"
+        )
+    }
+
+    Check.suite("Deleting a note mid-edit") {
+        let (store, root) = freshStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        // Typing schedules a debounced write. If the delete doesn't cancel it,
+        // that write lands 400ms later and resurrects the file.
+        var note = store.newNote(in: .scratch)
+        note.title = "Half typed"
+        store.upsert(note, debounced: true)
+        store.deleteNote(id: note.id)
+
+        let deadline = Date().addingTimeInterval(1)
+        while Date() < deadline {
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+
+        let reopened = Store(root: root)
+        reopened.load()
+        Check.expect(
+            !reopened.notes.contains { $0.id == note.id },
+            "a pending save does not write the note back after it is deleted"
+        )
+    }
 }
