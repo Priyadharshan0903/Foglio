@@ -199,3 +199,71 @@ func editorPlaceholderTests() {
         )
     }
 }
+
+@MainActor
+func selectionTests() {
+    func notes(_ n: Int) -> [Note] {
+        (0..<n).map { Note(title: "Note \($0)") }
+    }
+
+    Check.suite("What the editor shows after a delete") {
+        let list = notes(4)
+
+        // The one below is what you were reaching for next.
+        Check.equal(
+            NotesView.survivor(after: [list[1].id], in: list, current: list[1].id),
+            list[2].id,
+            "deleting one selects the note below it"
+        )
+
+        // Nothing below, so fall back up rather than to the top of the list.
+        Check.equal(
+            NotesView.survivor(after: [list[3].id], in: list, current: list[3].id),
+            list[2].id,
+            "deleting the last one selects the note above it"
+        )
+
+        // A block of several: skip past all of them, not just the first.
+        Check.equal(
+            NotesView.survivor(after: [list[1].id, list[2].id], in: list, current: list[1].id),
+            list[3].id,
+            "deleting a run lands past the whole run"
+        )
+
+        Check.expect(
+            NotesView.survivor(after: Set(list.map(\.id)), in: list, current: list[0].id) == nil,
+            "deleting everything leaves nothing selected"
+        )
+
+        // Deleting something that isn't on screen — a selection made under a
+        // different filter — mustn't move the editor off what you're reading.
+        Check.equal(
+            NotesView.survivor(after: [UUID()], in: list, current: list[2].id),
+            list[2].id,
+            "deleting a note that isn't in the list leaves the selection alone"
+        )
+    }
+
+    Check.suite("Dragging notes onto a folder") {
+        let a = Note(title: "A"), b = Note(title: "B"), c = Note(title: "C")
+
+        // Dragging an unselected row is about that row only.
+        Check.equal(
+            NoteDrag.ids(from: NoteDrag.payload(for: a, selection: [])),
+            [a.id],
+            "an unselected note drags alone"
+        )
+        Check.equal(
+            NoteDrag.ids(from: NoteDrag.payload(for: a, selection: [b.id, c.id])),
+            [a.id],
+            "so does one dragged from outside the selection"
+        )
+
+        // Dragging one of several ticked rows brings them all, which is what
+        // dragging one of a set of highlighted things means anywhere else.
+        let carried = Set(NoteDrag.ids(from: NoteDrag.payload(for: a, selection: [a.id, c.id])))
+        Check.equal(carried, Set([a.id, c.id]), "dragging a selected note carries the selection")
+
+        Check.equal(NoteDrag.ids(from: "not a uuid"), [], "junk on the pasteboard drops nothing")
+    }
+}

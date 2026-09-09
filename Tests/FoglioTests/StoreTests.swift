@@ -312,3 +312,231 @@ func renameTests() {
         )
     }
 }
+
+@MainActor
+func folderTests() {
+    func freshStore() -> (Store, URL) {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("foglio-test-\(UUID().uuidString)")
+        let store = Store(root: root)
+        store.load()
+        return (store, root)
+    }
+
+    Check.suite("Folders — names, not cases") {
+        // Typing the same name in two capitalisations means one folder.
+        Check.equal(Folder("Reading"), Folder("reading"), "identity ignores case")
+        Check.equal(Folder("Reading").label, "Reading", "the name is shown as written")
+
+        // Files written before folders were user-made carry lowercase names.
+        Check.equal(Folder("platform"), .platform, "a legacy lowercase name is the same folder")
+        Check.equal(Folder("platform").label, "Platform", "and is capitalised for display")
+
+        // Whitespace and emptiness can't produce an unreachable folder.
+        Check.equal(Folder("  Ideas  ").rawValue, "Ideas", "surrounding space is trimmed")
+        Check.equal(Folder(""), .scratch, "an empty name falls back to Scratch")
+    }
+
+    Check.suite("Folders — a custom name survives the file round-trip") {
+        let note = Note(title: "Kettlebell log", body: "5x5", folder: Folder("Training"))
+        let back = NoteFile.decode(NoteFile.encode(note))
+        Check.equal(back.folder, Folder("Training"), "a folder the app didn't ship with round-trips")
+        Check.equal(back.folder.rawValue, "Training", "with its capitalisation intact")
+
+        // Frontmatter is meant to be hand-editable, so an unknown name is a
+        // folder, not an error.
+        let handWritten = NoteFile.decode("---\ntitle: T\nfolder: Reading list\n---\nbody")
+        Check.equal(handWritten.folder, Folder("Reading list"), "a hand-typed folder is honoured")
+    }
+
+    Check.suite("Folders — creating") {
+        let (store, root) = freshStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        Check.equal(store.folders, Folder.starters, "a new store starts with the three seeded folders")
+
+        let made = store.addFolder(named: "Training")
+        Check.equal(made, Folder("Training"), "creating returns the new folder")
+        Check.expect(store.folders.contains(Folder("Training")), "and it joins the list")
+
+        Check.expect(store.addFolder(named: "  ") == nil, "a blank name creates nothing")
+        Check.equal(store.folders.count, 4, "and doesn't grow the list")
+
+        // Asking twice means "that folder", not a second row that looks the same.
+        Check.equal(store.addFolder(named: "training"), Folder("Training"), "an existing name returns it")
+        Check.equal(store.folders.count, 4, "without duplicating it")
+
+        // An empty folder has no notes to be derived from, so it has to be
+        // stored — this is the whole reason folders.json exists.
+        let reopened = Store(root: root)
+        reopened.load()
+        Check.expect(
+            reopened.folders.contains(Folder("Training")),
+            "an empty folder survives a relaunch"
+        )
+    }
+
+    Check.suite("Folders — moving notes") {
+        let (store, root) = freshStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        var note = store.newNote(in: .scratch)
+        note.title = "Kettlebell log"
+        store.upsert(note)
+        let edited = store.note(id: note.id)?.updatedAt ?? Date()
+
+        store.move(noteIds: [note.id], to: .career)
+        Check.equal(store.note(id: note.id)?.folder, .career, "the note moves")
+        Check.equal(
+            store.note(id: note.id)?.updatedAt,
+            edited,
+            "moving doesn't count as editing — the timestamp stands"
+        )
+
+        // The move has to reach disk, not just memory.
+        let reopened = Store(root: root)
+        reopened.load()
+        Check.equal(reopened.note(id: note.id)?.folder, .career, "and it survives a reload")
+
+        // Moving to a folder that doesn't exist yet creates it, so a note can
+        // never end up somewhere the sidebar doesn't show.
+        store.move(noteIds: [note.id], to: Folder("Elsewhere"))
+        Check.expect(store.folders.contains(Folder("Elsewhere")), "an unknown target joins the list")
+    }
+
+    Check.suite("Folders — renaming carries the notes") {
+        let (store, root) = freshStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let note = store.newNote(in: .career)
+        store.renameFolder(.career, to: "Job hunt")
+
+        Check.expect(!store.folders.contains(.career), "the old name goes")
+        Check.expect(store.folders.contains(Folder("Job hunt")), "the new one takes its place")
+        Check.equal(
+            store.note(id: note.id)?.folder,
+            Folder("Job hunt"),
+            "notes inside follow the rename"
+        )
+
+        let reopened = Store(root: root)
+        reopened.load()
+        Check.equal(reopened.note(id: note.id)?.folder, Folder("Job hunt"), "on disk too")
+
+        // Renaming onto an existing name merges: two rows meaning one folder
+        // would be indistinguishable everywhere downstream.
+        store.renameFolder(Folder("Job hunt"), to: "Scratch")
+        Check.equal(store.folders.filter { $0 == .scratch }.count, 1, "no duplicate row appears")
+        Check.equal(store.note(id: note.id)?.folder, .scratch, "and the notes land in the survivor")
+    }
+
+    Check.suite("Folders — deleting keeps the notes") {
+        let (store, root) = freshStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let note = store.newNote(in: .platform)
+        let countBefore = store.notes.count
+
+        store.deleteFolder(.platform)
+        Check.expect(!store.folders.contains(.platform), "the folder goes")
+        Check.equal(store.notes.count, countBefore, "but none of its notes do")
+        Check.equal(store.note(id: note.id)?.folder, .scratch, "they fall back to Scratch")
+
+        // Scratch is where those notes land, so it can't be the one removed.
+        store.deleteFolder(.scratch)
+        Check.expect(store.folders.contains(.scratch), "Scratch stays")
+    }
+
+    Check.suite("Folders — a folder only a note knows about") {
+        let (store, root) = freshStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let notesDir = root.appendingPathComponent("notes")
+
+        // What a hand-edited file, or an import, looks like: a note claiming a
+        // folder the sidebar has never heard of. Without reconciliation that
+        // note sits somewhere unreachable.
+        let note = Note(title: "From elsewhere", body: "x", folder: Folder("Imported"))
+        try? NoteFile.encode(note).write(
+            to: notesDir.appendingPathComponent(NoteFile.filename(for: note)),
+            atomically: true, encoding: .utf8
+        )
+        _ = store
+
+        let reopened = Store(root: root)
+        reopened.load()
+        Check.expect(
+            reopened.folders.contains(Folder("Imported")),
+            "an unlisted folder is picked up from the notes on load"
+        )
+    }
+
+    Check.suite("Deleting several notes at once") {
+        let (store, root) = freshStore()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let notesDir = root.appendingPathComponent("notes")
+
+        func fileCount() -> Int {
+            ((try? FileManager.default.contentsOfDirectory(atPath: notesDir.path)) ?? [])
+                .filter { $0.hasSuffix(".md") }.count
+        }
+
+        let before = fileCount()
+        let doomed = (0..<3).map { i -> Note in
+            var note = store.newNote(in: .scratch)
+            note.title = "Throwaway \(i)"
+            store.upsert(note)
+            return note
+        }
+        let keeper = store.newNote(in: .scratch)
+        Check.equal(fileCount(), before + 4, "four notes, four files")
+
+        store.deleteNotes(ids: doomed.map(\.id))
+        Check.equal(fileCount(), before + 1, "only the untouched note's file is left")
+        Check.expect(store.note(id: keeper.id) != nil, "and it is still there in memory")
+        Check.expect(doomed.allSatisfy { store.note(id: $0.id) == nil }, "the rest are gone")
+    }
+}
+
+@MainActor
+func folderExportTests() {
+    Check.suite("Folders — through an export and back") {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("foglio-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+
+        let store = Store(root: root)
+        store.load()
+        store.addFolder(named: "Training")
+        let filed = store.newNote(in: Folder("Reading"))
+
+        let archive = Exporter.archive(from: store)
+
+        let other = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("foglio-test-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: other) }
+        let restored = Store(root: other)
+        restored.load()
+        restored.replaceAll(with: archive)
+
+        Check.expect(
+            restored.folders.contains(Folder("Training")),
+            "an empty folder survives export and import"
+        )
+        Check.equal(
+            restored.note(id: filed.id)?.folder,
+            Folder("Reading"),
+            "and a note keeps the folder it was filed in"
+        )
+
+        // An archive from before folders were user-made has no folder list.
+        var legacy = archive
+        legacy.folders = nil
+        let older = Store(root: other.appendingPathComponent("older"))
+        older.load()
+        older.replaceAll(with: legacy)
+        Check.expect(
+            older.folders.contains(Folder("Reading")),
+            "a folder list is rebuilt from the notes when the archive has none"
+        )
+    }
+}

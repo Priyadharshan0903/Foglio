@@ -15,6 +15,9 @@ MainActor.assumeIsolated { meetingNudgeTests() }
 MainActor.assumeIsolated { weekRangeTests() }
 MainActor.assumeIsolated { storeTests() }
 MainActor.assumeIsolated { renameTests() }
+MainActor.assumeIsolated { folderTests() }
+MainActor.assumeIsolated { selectionTests() }
+MainActor.assumeIsolated { folderExportTests() }
 MainActor.assumeIsolated { tasksTests() }
 MainActor.assumeIsolated { exportTests() }
 
