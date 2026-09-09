@@ -5,6 +5,12 @@ struct NotesView: View {
     @Bindable var state: AppState
     let store: Store
 
+    /// The note a delete has been asked for but not yet confirmed.
+    ///
+    /// Deleting removes the markdown file from disk, so it is not something to
+    /// do on a stray click — and there is no undo stack to fall back on.
+    @State private var pendingDeletion: Note?
+
     private var theme: Theme { state.theme }
 
     private var query: String {
@@ -30,6 +36,35 @@ struct NotesView: View {
             Divider().overlay(theme.line)
             editorPane
         }
+        .confirmationDialog(
+            pendingDeletion.map { "Delete “\($0.title.isEmpty ? "Untitled note" : $0.title)”?" } ?? "",
+            isPresented: Binding(get: { pendingDeletion != nil }, set: { if !$0 { pendingDeletion = nil } }),
+            titleVisibility: .visible
+        ) {
+            Button("Delete", role: .destructive) {
+                if let note = pendingDeletion { delete(note) }
+                pendingDeletion = nil
+            }
+            Button("Cancel", role: .cancel) { pendingDeletion = nil }
+        } message: {
+            Text("Its markdown file is removed from disk. This can't be undone.")
+        }
+    }
+
+    // MARK: - Deleting
+
+    /// Hands selection to the neighbour *before* the note goes, so the editor
+    /// lands somewhere deliberate rather than falling back to whatever happens
+    /// to top the list.
+    private func delete(_ note: Note) {
+        let visible = visibleNotes
+        let successor = visible.firstIndex(where: { $0.id == note.id }).map { i in
+            visible.indices.contains(i + 1) ? visible[i + 1] : (i > 0 ? visible[i - 1] : nil)
+        } ?? nil
+
+        state.activeNoteId = successor?.id
+        state.activeBlock = nil
+        store.deleteNote(id: note.id)
     }
 
     // MARK: - Folders
@@ -162,6 +197,9 @@ struct NotesView: View {
             .overlay(alignment: .top) { Rectangle().fill(theme.lineSoft).frame(height: 1) }
         }
         .buttonStyle(.flat)
+        .contextMenu {
+            Button("Delete Note…", role: .destructive) { pendingDeletion = note }
+        }
     }
 
     // MARK: - Editor
@@ -169,7 +207,7 @@ struct NotesView: View {
     @ViewBuilder
     private var editorPane: some View {
         if let note = activeNote {
-            NoteEditor(state: state, store: store, note: note)
+            NoteEditor(state: state, store: store, note: note, onDelete: { pendingDeletion = note })
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(theme.bg)
         } else {

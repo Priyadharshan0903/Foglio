@@ -6,6 +6,9 @@ struct NoteEditor: View {
     @Bindable var state: AppState
     let store: Store
     let note: Note
+    /// Asks the list to confirm and carry out the delete — it owns both the
+    /// dialog and the question of what gets selected next.
+    let onDelete: () -> Void
 
     /// The text of the block currently being edited.
     ///
@@ -24,17 +27,19 @@ struct NoteEditor: View {
         // Parsed once per render. `note.blocks` re-parses the whole document on
         // every access, so reading it across the view tree was a real cost.
         let blocks = note.blocks
+        // Same reasoning as `blocks`: computed once here rather than per row.
+        let numbers = Markdown.ordinals(of: blocks)
 
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
                 header(blockCount: blocks.count)
                 toolbar(blocks: blocks)
-                blockStack(blocks)
+                blockStack(blocks, numbers: numbers)
             }
         }
         .onChange(of: state.activeBlock, initial: true) { _, index in
             guard let index, index < blocks.count else { return }
-            draft = Markdown.editableText(for: blocks[index])
+            draft = editableText(at: index, in: blocks)
         }
         .onChange(of: note.id) { _, _ in
             state.activeBlock = nil
@@ -58,6 +63,7 @@ struct NoteEditor: View {
                     .foregroundStyle(theme.muted)
                 pinMenu
                 Spacer()
+                deleteButton
             }
             .padding(.top, 9)
         }
@@ -76,6 +82,20 @@ struct NoteEditor: View {
                 store.upsert(updated, debounced: true)
             }
         )
+    }
+
+    private var deleteButton: some View {
+        Button(action: onDelete) {
+            HStack(spacing: 6) {
+                IconView(icon: .trash, size: 12, lineWidth: 1.6)
+                Text("Delete").font(Typo.sans(11))
+            }
+            .foregroundStyle(theme.muted)
+            .padding(.horizontal, 9).padding(.vertical, 4)
+            .hoverHighlight(theme, cornerRadius: 6)
+        }
+        .buttonStyle(.flat)
+        .help("Delete this note")
     }
 
     private var pinMenu: some View {
@@ -117,6 +137,7 @@ struct NoteEditor: View {
 
     private enum Format: String {
         case title = "Title", heading = "Heading", body = "Body"
+        case bullet = "Bullet", numbered = "Numbered"
         case checklist = "Checklist", code = "Code"
 
         static func of(_ block: Block) -> Format? {
@@ -124,6 +145,8 @@ struct NoteEditor: View {
             case .h1: .title
             case .h2: .heading
             case .paragraph: .body
+            case .listItem: .bullet
+            case .orderedItem: .numbered
             case .todo: .checklist
             case .code: .code
             default: nil
@@ -137,25 +160,36 @@ struct NoteEditor: View {
     }
 
     private func toolbar(blocks: [Block]) -> some View {
-        HStack(spacing: 4) {
-            // No pre-selected state: a button only lights up on hover or press,
-            // so nothing looks chosen that you didn't choose. What block you're
-            // in is reported by the quiet tag on the right instead.
-            toolbarButton("Heading", hint: "Heading — or type ## ") {
-                convert(to: .h2(""), blocks: blocks)
+        HStack(alignment: .top, spacing: 8) {
+            // Wraps rather than truncates. The six buttons plus the tag want
+            // ~500pt, and the editor pane is only ~380pt wide at the window's
+            // 900pt minimum — as a plain HStack the labels got clipped there.
+            FlowLayout(spacing: 4, lineSpacing: 4) {
+                // No pre-selected state: a button only lights up on hover or
+                // press, so nothing looks chosen that you didn't choose. What
+                // block you're in is reported by the quiet tag on the right.
+                toolbarButton("Heading", hint: "Heading — or type ## ") {
+                    convert(to: .h2(""), blocks: blocks)
+                }
+                toolbarButton("Body", hint: "Plain paragraph") {
+                    convert(to: .paragraph(""), blocks: blocks)
+                }
+                toolbarButton("Bullets", hint: "Bulleted list — or type - ") {
+                    convert(to: .listItem(""), blocks: blocks)
+                }
+                toolbarButton("Numbered", hint: "Numbered list — or type 1. ") {
+                    convert(to: .orderedItem(""), blocks: blocks)
+                }
+                toolbarButton("Checklist", hint: "Checklist — or type - [ ] ") {
+                    convert(to: .todo(text: "", checked: false), blocks: blocks)
+                }
+                toolbarButton("Code", hint: "Code block — or type ``` ") {
+                    insert(.code(language: "go", text: "// code"), blocks: blocks)
+                }
+                moreMenu(blocks: blocks)
             }
-            toolbarButton("Body", hint: "Plain paragraph") {
-                convert(to: .paragraph(""), blocks: blocks)
-            }
-            toolbarButton("Checklist", hint: "Checklist — or type - [ ] ") {
-                convert(to: .todo(text: "", checked: false), blocks: blocks)
-            }
-            toolbarButton("Code", hint: "Code block — or type ``` ") {
-                insert(.code(language: "go", text: "// code"), blocks: blocks)
-            }
-            moreMenu(blocks: blocks)
 
-            Spacer()
+            Spacer(minLength: 8)
 
             if let format = currentFormat(blocks) {
                 Text(format.rawValue)
@@ -167,9 +201,10 @@ struct NoteEditor: View {
                     .clipShape(RoundedRectangle(cornerRadius: 5, style: .continuous))
                     .help("The block you're editing")
             } else {
-                Text("## · - [ ] · ```")
+                Text("## · - · 1. · - [ ] · ```")
                     .font(Typo.mono(10.5))
                     .foregroundStyle(theme.muted)
+                    .fixedSize()
                     .help("Markdown shortcuts you can type directly")
             }
         }
@@ -219,7 +254,7 @@ struct NoteEditor: View {
 
     // MARK: - Blocks
 
-    private func blockStack(_ blocks: [Block]) -> some View {
+    private func blockStack(_ blocks: [Block], numbers: [Int?]) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                 if state.activeBlock == index {
@@ -243,6 +278,7 @@ struct NoteEditor: View {
                     BlockView(
                         block: block,
                         theme: theme,
+                        ordinal: numbers[index],
                         alreadySent: isSent(block),
                         onEdit: { beginEditing(index, blocks: blocks) },
                         onToggleCheck: { toggleCheck(at: index) },
@@ -304,15 +340,26 @@ struct NoteEditor: View {
     private func beginEditing(_ index: Int, blocks: [Block]) {
         // Commit whatever block we were in before moving.
         commitDraft(blocks)
-        draft = Markdown.editableText(for: blocks[index])
+        draft = editableText(at: index, in: blocks)
         state.activeBlock = index
+    }
+
+    /// The raw markdown for one block, with a numbered item showing the number
+    /// it actually carries. Only numbered items pay for the count, and only
+    /// when a block is opened — not on every render.
+    private func editableText(at index: Int, in blocks: [Block]) -> String {
+        guard blocks.indices.contains(index) else { return "" }
+        guard case .orderedItem = blocks[index] else {
+            return Markdown.editableText(for: blocks[index])
+        }
+        return Markdown.editableText(for: blocks[index], ordinal: Markdown.ordinals(of: blocks)[index])
     }
 
     /// Writes the draft back into the note. The only path by which typed text
     /// reaches the store.
     private func commitDraft(_ blocks: [Block]) {
         guard let index = state.activeBlock, index < blocks.count else { return }
-        guard Markdown.editableText(for: blocks[index]) != draft else { return }
+        guard editableText(at: index, in: blocks) != draft else { return }
         mutate { $0[index] = Markdown.applyEdit(draft, to: $0[index]) }
     }
 
@@ -332,11 +379,9 @@ struct NoteEditor: View {
     // MARK: - Block operations
 
     private func mutate(_ transform: (inout [Block]) -> Void) {
-        var updated = note
-        var arr = updated.blocks
+        var arr = note.blocks
         transform(&arr)
-        updated.blocks = arr
-        store.upsert(updated)
+        commit(arr)
     }
 
     /// Replaces the active block with the same text in a new form (`convert`, :795).
@@ -347,15 +392,20 @@ struct NoteEditor: View {
         }
         // Use what's being typed, not the last committed value.
         let text = Markdown.applyEdit(draft, to: blocks[index]).plainText
-        let converted = kindWith(kind, text)
-        mutate { $0[index] = converted }
-        draft = Markdown.editableText(for: converted)
+        var updated = blocks
+        updated[index] = kindWith(kind, text)
+        commit(updated)
+        // Seeded from the updated document, so turning the third item of a run
+        // into a numbered item shows "3." rather than a misleading "1.".
+        draft = editableText(at: index, in: updated)
     }
 
     private func kindWith(_ kind: Block, _ text: String) -> Block {
         switch kind {
         case .h1: .h1(text)
         case .h2: .h2(text)
+        case .listItem: .listItem(text)
+        case .orderedItem: .orderedItem(text)
         case .todo: .todo(text: text, checked: false)
         default: .paragraph(text)
         }
@@ -366,32 +416,69 @@ struct NoteEditor: View {
         commitDraft(blocks)
         let index = state.activeBlock.map { $0 + 1 } ?? blocks.count
         moveFocus {
-            mutate { $0.insert(block, at: min(index, $0.count)) }
-            draft = Markdown.editableText(for: block)
+            var updated = note.blocks
+            let at = min(index, updated.count)
+            updated.insert(block, at: at)
+            commit(updated)
+            draft = editableText(at: at, in: updated)
             state.activeBlock = index
         }
     }
 
+    /// Return: carry the list on, or end it.
+    ///
+    /// A list that doesn't continue itself isn't usable — you'd click "Bullets"
+    /// once per line. And an empty item is how everyone signals they're done
+    /// with the list, so Return there turns it back into a paragraph instead of
+    /// adding another empty bullet you then have to delete.
     private func splitBlock(at index: Int, blocks: [Block]) {
         moveFocus {
             var arr = blocks
-            arr[index] = Markdown.applyEdit(draft, to: arr[index])
-            arr.insert(.paragraph(""), at: index + 1)
-            var updated = note
-            updated.blocks = arr
-            store.upsert(updated)
+            let edited = Markdown.applyEdit(draft, to: arr[index])
 
-            draft = ""
+            guard let next = Self.continuation(after: edited) else {
+                arr[index] = .paragraph("")
+                commit(arr)
+                draft = ""
+                state.activeBlock = index
+                return
+            }
+
+            arr[index] = edited
+            arr.insert(next, at: index + 1)
+            commit(arr)
+
+            draft = editableText(at: index + 1, in: arr)
             state.activeBlock = index + 1
         }
+    }
+
+    /// The block Return should add after `block`, or nil when it should end a
+    /// list instead — which is what an empty item asks for.
+    static func continuation(after block: Block) -> Block? {
+        if block.isListItem && block.plainText.isEmpty { return nil }
+        return block.continuation
+    }
+
+    private func commit(_ blocks: [Block]) {
+        var updated = note
+        updated.blocks = blocks
+        store.upsert(updated)
     }
 
     private func deleteBlock(at index: Int, blocks: [Block]) {
         guard blocks.count > 1 else { return }
         moveFocus {
-            mutate { $0.remove(at: index) }
+            var updated = blocks
+            updated.remove(at: index)
+            commit(updated)
+
+            // Seeded from the document *after* the removal. Backspacing out of
+            // an empty first block used to seed the draft from the block that
+            // had just been deleted — so the editor showed "" over whatever now
+            // sat at index 0, and blurring committed that "" over its text.
             let target = max(0, index - 1)
-            draft = target < blocks.count ? Markdown.editableText(for: blocks[target]) : ""
+            draft = editableText(at: target, in: updated)
             state.activeBlock = target
         }
     }

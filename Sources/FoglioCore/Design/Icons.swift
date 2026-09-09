@@ -12,7 +12,7 @@ import SwiftUI
 // defines it, so that icon renders empty upstream. This is our replacement.
 
 enum Icon: String, CaseIterable {
-    case capture, notes, tasks, settings, roadmap, week, folder, all, chart, pin
+    case capture, notes, tasks, settings, roadmap, week, folder, all, chart, pin, trash
 
     /// Builds the icon in a 24x24 coordinate space.
     private func build(into p: inout Path) {
@@ -76,6 +76,13 @@ enum Icon: String, CaseIterable {
             move(9, 4); line(15, 4); line(14, 10); line(18, 13)
             line(6, 13); line(10, 10); p.closeSubpath()
             move(12, 13); line(12, 20)
+
+        case .trash: // lid, handle, bin, two staves — drawn to match the set
+            move(4, 7); line(20, 7)
+            move(10, 4); line(14, 4)
+            move(6, 7); line(7, 20); line(17, 20); line(18, 7)
+            move(10, 10); line(10, 17)
+            move(14, 10); line(14, 17)
         }
     }
 

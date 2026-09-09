@@ -4,6 +4,9 @@ import SwiftUI
 struct BlockView: View {
     let block: Block
     let theme: Theme
+    /// This block's number when it's a numbered-list item — computed from its
+    /// position by `Markdown.ordinals(of:)`, never stored on the block.
+    var ordinal: Int?
     /// True when a task with this todo's label already exists.
     var alreadySent: Bool = false
     var onEdit: () -> Void
@@ -36,16 +39,12 @@ struct BlockView: View {
             paragraph(text)
 
         case .listItem(let text):
-            HStack(alignment: .top, spacing: 11) {
-                Text("—").foregroundStyle(theme.muted)
-                Text(text).foregroundStyle(theme.text)
-            }
-            .font(Typo.sans(14))
-            .lineSpacing(9.5)
-            .padding(.vertical, 4).padding(.horizontal, 9)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
-            .onTapGesture(perform: onEdit)
+            item(marker: "—", text: text)
+
+        case .orderedItem(let text):
+            // Right-aligned in a fixed column so "9." and "10." keep their text
+            // on the same left edge instead of stepping a character sideways.
+            item(marker: "\(ordinal ?? 1).", text: text, markerWidth: 20)
 
         case .todo(let text, let checked):
             todo(text: text, checked: checked)
@@ -85,6 +84,23 @@ struct BlockView: View {
                 .contentShape(Rectangle())
                 .onTapGesture(perform: onEdit)
         }
+    }
+
+    // MARK: - List items
+
+    private func item(marker: String, text: String, markerWidth: CGFloat? = nil) -> some View {
+        HStack(alignment: .top, spacing: 11) {
+            Text(marker)
+                .foregroundStyle(theme.muted)
+                .frame(width: markerWidth, alignment: .trailing)
+            Text(text).foregroundStyle(theme.text)
+        }
+        .font(Typo.sans(14))
+        .lineSpacing(9.5)
+        .padding(.vertical, 4).padding(.horizontal, 9)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .contentShape(Rectangle())
+        .onTapGesture(perform: onEdit)
     }
 
     // MARK: - Paragraph with [[wiki links]]

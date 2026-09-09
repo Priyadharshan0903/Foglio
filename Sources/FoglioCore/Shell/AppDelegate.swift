@@ -141,6 +141,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         false
     }
 
+    /// Typing schedules its disk write 400ms out, so quitting within that window
+    /// — which is exactly what replacing the app involves — dropped the last
+    /// edit. Nothing else forces the queue: the editor only flushes on blur.
+    func applicationWillTerminate(_ notification: Notification) {
+        store.flushPendingSaves()
+    }
+
     /// Meetings move during the day, so re-read every 15 minutes. Cheap for a
     /// local file; a single conditional GET for a subscription URL.
     private func startCalendarRefresh() {

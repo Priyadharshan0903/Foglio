@@ -86,10 +86,22 @@ struct Note: Identifiable, Equatable, Codable {
             // Headings, bullets, tables, dividers and images aren't snippets.
             if line.hasPrefix("#") || line.hasPrefix("- ") || line.hasPrefix("|")
                 || line.hasPrefix("---") || line.hasPrefix("![") { continue }
+            // Nor are numbered items — "1. First step" reads as a list, not as
+            // a description of the note.
+            if isNumberedItem(line) { continue }
 
             return strip(String(line))
         }
         return ""
+    }
+
+    /// `1. text`, matched on the raw line — kept in step with
+    /// `Markdown.parseOrdered`, but without parsing the note to find out.
+    private func isNumberedItem(_ line: Substring) -> Bool {
+        let digits = line.prefix { $0.isASCII && $0.isNumber }
+        guard !digits.isEmpty, digits.count <= 9 else { return false }
+        let rest = line.dropFirst(digits.count)
+        return rest.hasPrefix(". ") || rest.hasPrefix(") ")
     }
 
     private func strip(_ text: String) -> String {

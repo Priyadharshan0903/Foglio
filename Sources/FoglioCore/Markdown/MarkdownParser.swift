@@ -13,15 +13,40 @@ enum Markdown {
     // MARK: - Whole document
 
     static func serialize(_ blocks: [Block]) -> String {
-        blocks.flatMap(lines(for:)).joined(separator: "\n")
+        let numbers = ordinals(of: blocks)
+        return zip(blocks, numbers)
+            .flatMap { lines(for: $0, ordinal: $1) }
+            .joined(separator: "\n")
     }
 
-    private static func lines(for block: Block) -> [String] {
+    /// The number each block carries as a numbered-list item, or nil when it
+    /// isn't one. A run restarts at 1 after any other kind of block, so two
+    /// lists separated by a paragraph don't share a counter.
+    ///
+    /// This is the single definition of the numbering, used both to write the
+    /// file and to draw the list, so the two can't drift apart.
+    static func ordinals(of blocks: [Block]) -> [Int?] {
+        var numbers: [Int?] = []
+        var n = 0
+        for block in blocks {
+            if case .orderedItem = block {
+                n += 1
+                numbers.append(n)
+            } else {
+                n = 0
+                numbers.append(nil)
+            }
+        }
+        return numbers
+    }
+
+    private static func lines(for block: Block, ordinal: Int?) -> [String] {
         switch block {
         case .h1(let t): return ["# " + t]
         case .h2(let t): return ["## " + t]
         case .paragraph(let t): return [t]
         case .listItem(let t): return ["- " + t]
+        case .orderedItem(let t): return ["\(ordinal ?? 1). " + t]
         case .todo(let t, let checked): return ["- [" + (checked ? "x" : " ") + "] " + t]
         case .divider: return ["---"]
         case .image(let alt, let path): return ["![\(alt)](\(path))"]
@@ -91,6 +116,7 @@ enum Markdown {
         if raw.hasPrefix("# ") { return .h1(String(raw.dropFirst(2))) }
         if let todo = parseTodo(raw) { return todo }
         if raw.hasPrefix("- ") { return .listItem(String(raw.dropFirst(2))) }
+        if let ordered = parseOrdered(raw) { return ordered }
         if raw.hasPrefix("---") { return .divider }
         if let image = parseImage(raw) { return image }
         return .paragraph(raw)
@@ -109,6 +135,17 @@ enum Markdown {
             text: String(raw[raw.index(rest, offsetBy: 1)...]),
             checked: mark != " "
         )
+    }
+
+    /// `1. text` or `1) text`, the two markers CommonMark allows. Whatever
+    /// number is written is discarded — position decides it — and the digit run
+    /// is capped at 9 like CommonMark, so "1234567890. " stays a paragraph.
+    private static func parseOrdered(_ raw: String) -> Block? {
+        let digits = raw.prefix { $0.isASCII && $0.isNumber }
+        guard !digits.isEmpty, digits.count <= 9 else { return nil }
+        let rest = raw.dropFirst(digits.count)
+        guard rest.hasPrefix(". ") || rest.hasPrefix(") ") else { return nil }
+        return .orderedItem(String(rest.dropFirst(2)))
     }
 
     private static func parseImage(_ raw: String) -> Block? {
@@ -149,11 +186,14 @@ enum Markdown {
     /// Code and table blocks show their inner text without the fence or the
     /// separator row, matching the design's editor. That's a display concern and
     /// stays lossy on purpose; `serialize` is the lossless path.
-    static func editableText(for block: Block) -> String {
+    /// `ordinal` only matters for a numbered item: it's what puts the item's
+    /// real number in front of you while you edit it, rather than a fixed "1.".
+    static func editableText(for block: Block, ordinal: Int? = nil) -> String {
         switch block {
         case .h1(let t): return "# " + t
         case .h2(let t): return "## " + t
         case .listItem(let t): return "- " + t
+        case .orderedItem(let t): return "\(ordinal ?? 1). " + t
         case .todo(let t, let checked): return "- [" + (checked ? "x" : " ") + "] " + t
         case .paragraph(let t): return t
         case .code(_, let text): return text
