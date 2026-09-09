@@ -267,3 +267,48 @@ func selectionTests() {
         Check.equal(NoteDrag.ids(from: "not a uuid"), [], "junk on the pasteboard drops nothing")
     }
 }
+
+/// Why the source editor writes `body` and not `blocks`.
+func sourceModeTests() {
+    Check.suite("Source mode keeps the text as typed") {
+        // The block round-trip is a normaliser. That is the right thing when
+        // you are editing blocks — the document is whatever the blocks say —
+        // but it makes a source editor that rewrites your text as you leave it.
+        // Each of these is a rewrite `commitSource` must not perform.
+        let normalised = [
+            ("1) first\n2) second", "a `1)` list is rewritten to `1.`"),
+            ("5. fifth", "a numbered item is renumbered from 1"),
+            ("|a|b|\n|---|---|\n|1|2|", "a compact table gains padding"),
+            ("-----", "a long divider is shortened to three dashes"),
+        ]
+
+        for (body, why) in normalised {
+            var note = Note(body: body)
+            // Exactly what a block-mode commit does (`commit(_:)`).
+            note.blocks = note.blocks
+            Check.expect(note.body != body, "block round-trip rewrites it — \(why)")
+        }
+
+        // What source mode does instead: the text reaches the file unchanged,
+        // and still parses back to the same blocks, so switching modes is not
+        // a one-way door.
+        for (body, _) in normalised {
+            let typed = Note(body: body)
+            Check.equal(typed.body, body, "source mode stores the text verbatim")
+            Check.equal(
+                Markdown.serialize(Markdown.parse(body)),
+                Markdown.serialize(Markdown.parse(Markdown.serialize(Markdown.parse(body)))),
+                "and it still parses — normalising it twice changes nothing more"
+            )
+        }
+
+        // Blank lines are structure in markdown, and a source editor that ate
+        // them would reflow the document behind your back.
+        let spaced = "# Title\n\n\nBody after two blank lines\n"
+        Check.equal(
+            Markdown.serialize(Markdown.parse(spaced)),
+            spaced,
+            "blank lines survive the parser untouched"
+        )
+    }
+}
