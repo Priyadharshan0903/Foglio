@@ -8,6 +8,7 @@ import Observation
 ///
 ///     Foglio/
 ///       notes/<slug>-<id8>.md    one markdown file per note
+///       folders.json
 ///       tasks.json
 ///       log.json
 ///       milestones.json
@@ -18,6 +19,12 @@ import Observation
 @MainActor
 final class Store {
     private(set) var notes: [Note] = []
+    /// Every folder the sidebar offers, in the order it shows them.
+    ///
+    /// Kept as its own list rather than derived from the notes, because a
+    /// folder you have just made — and one you have emptied — has no notes to
+    /// derive it from, and should still be there.
+    private(set) var folders: [Folder] = []
     private(set) var tasks: [TaskItem] = []
     private(set) var log: [LogEntry] = []
     private(set) var milestones: [Milestone] = []
@@ -46,6 +53,7 @@ final class Store {
     }
 
     private var notesDir: URL { root.appendingPathComponent("notes", isDirectory: true) }
+    private var foldersURL: URL { root.appendingPathComponent("folders.json") }
     private var tasksURL: URL { root.appendingPathComponent("tasks.json") }
     private var logURL: URL { root.appendingPathComponent("log.json") }
     private var milestonesURL: URL { root.appendingPathComponent("milestones.json") }
@@ -60,6 +68,7 @@ final class Store {
 
         notes = loadNotes()
 
+        folders = decode([Folder].self, from: foldersURL) ?? Folder.starters
         tasks = decode([TaskItem].self, from: tasksURL) ?? []
         log = decode([LogEntry].self, from: logURL) ?? []
         milestones = decode([Milestone].self, from: milestonesURL) ?? []
@@ -73,7 +82,24 @@ final class Store {
             saveTasks()
             saveLog()
         }
+        reconcileFolders()
         saveMilestones()
+    }
+
+    /// Makes sure every folder a note claims is one the sidebar lists.
+    ///
+    /// Without this a note can sit somewhere unreachable: an import brings its
+    /// own folders, and these are plain text files, so `folder:` can also be
+    /// edited by hand. Scratch is always kept for the same reason — it is where
+    /// a note with nowhere else to go ends up.
+    private func reconcileFolders() {
+        var seen = Set(folders.map(\.id))
+        for note in notes where !seen.contains(note.folder.id) {
+            folders.append(note.folder)
+            seen.insert(note.folder.id)
+        }
+        if !seen.contains(Folder.scratch.id) { folders.append(.scratch) }
+        saveFolders()
     }
 
     /// Reads every note file, collapsing duplicate ids left behind by the
@@ -193,6 +219,82 @@ final class Store {
         }
     }
 
+    /// Deletes several notes as one action, so a bulk delete is one pass and
+    /// one confirmation rather than a stutter of list updates.
+    func deleteNotes(ids: some Sequence<UUID>) {
+        for id in ids { deleteNote(id: id) }
+    }
+
+    // MARK: - Folders
+
+    /// Creates a folder, or hands back the one that already has that name —
+    /// typing a name that exists means "that folder", not a mistake.
+    @discardableResult
+    func addFolder(named name: String) -> Folder? {
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let folder = Folder(name)
+        if let existing = folders.first(where: { $0 == folder }) { return existing }
+        folders.append(folder)
+        saveFolders()
+        return folder
+    }
+
+    /// Renames in place, rewriting the notes inside it to match. Renaming onto
+    /// a name that already exists merges the two — the alternative is two rows
+    /// that mean the same folder, which nothing downstream could tell apart.
+    func renameFolder(_ folder: Folder, to name: String) {
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let index = folders.firstIndex(of: folder)
+        else { return }
+
+        let renamed = Folder(name)
+        if renamed != folder, folders.contains(renamed) {
+            folders.remove(at: index)
+        } else {
+            folders[index] = renamed
+        }
+        saveFolders()
+        reassign(notesIn: folder, to: renamed)
+    }
+
+    /// Removing a folder keeps its notes — they fall back to Scratch, which is
+    /// why Scratch itself can't be removed.
+    func deleteFolder(_ folder: Folder) {
+        guard folder != .scratch, let index = folders.firstIndex(of: folder) else { return }
+        folders.remove(at: index)
+        saveFolders()
+        reassign(notesIn: folder, to: .scratch)
+    }
+
+    /// Moves notes between folders.
+    ///
+    /// Deliberately not `upsert`: that stamps `updatedAt`, and filing a note
+    /// somewhere else isn't editing it — it would jump to the top of the list
+    /// and claim it was edited just now.
+    func move(noteIds: some Sequence<UUID>, to folder: Folder) {
+        let ids = Set(noteIds)
+        for i in notes.indices where ids.contains(notes[i].id) && notes[i].folder != folder {
+            notes[i].folder = folder
+            saveNote(notes[i])
+        }
+        if !folders.contains(folder) {
+            folders.append(folder)
+            saveFolders()
+        }
+    }
+
+    /// Re-files every note in `folder`, including when only its capitalisation
+    /// changed — the note's own copy of the name has to follow the rename.
+    private func reassign(notesIn folder: Folder, to destination: Folder) {
+        for i in notes.indices
+        where notes[i].folder == folder && notes[i].folder.rawValue != destination.rawValue {
+            notes[i].folder = destination
+            saveNote(notes[i])
+        }
+    }
+
+    private func saveFolders() { write(folders, to: foldersURL) }
+
     private func saveNote(_ note: Note) {
         try? FileManager.default.createDirectory(at: notesDir, withIntermediateDirectories: true)
 
@@ -303,6 +405,11 @@ final class Store {
         tasks = archive.tasks
         log = archive.log
         milestones = archive.milestones
+
+        // Older archives carry the folder on each note but no folder list, so
+        // the sidebar is rebuilt from whatever arrived.
+        folders = archive.folders ?? Folder.starters
+        reconcileFolders()
 
         saveNotes()
         saveTasks()

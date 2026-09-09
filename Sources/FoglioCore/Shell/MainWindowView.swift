@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The detachable main window: header, 52pt icon rail, section content
@@ -8,6 +9,8 @@ struct MainWindowView: View {
     let calendar: CalendarSource
 
     @FocusState private var searchFocused: Bool
+    /// Whether this view currently owns an `NSCursor` push — see `searchField`.
+    @State private var cursorPushed = false
 
     /// A fixed height so `AppDelegate` can vertically center the native
     /// traffic lights against it deterministically, instead of guessing from
@@ -98,6 +101,22 @@ struct MainWindowView: View {
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .strokeBorder(theme.line, lineWidth: 1)
         )
+        // Only the text field itself accepted a click, and it is 15pt tall
+        // inside a 27pt pill — so the magnifier, the 6pt of padding above and
+        // below, and the empty run to the right of the caret all did nothing.
+        // Hit-testing the window confirmed it: clicks outside that middle band
+        // landed on the hosting view and were dropped. The whole pill is the
+        // control, so the whole pill focuses it.
+        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+        .onTapGesture { searchFocused = true }
+        .onHover { inside in
+            // Guarded: `push`/`pop` are a stack, and a double push (SwiftUI can
+            // repeat an enter) would leave the I-beam stuck over the whole app.
+            guard inside != cursorPushed else { return }
+            cursorPushed = inside
+            if inside { NSCursor.iBeam.push() } else { NSCursor.pop() }
+        }
+        .help("Search notes, tasks and the log (⌘K)")
     }
 
     private var magnifier: some View {

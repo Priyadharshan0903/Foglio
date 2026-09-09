@@ -273,11 +273,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         w.center()
 
         w.delegate = self
-        // Escape clears a search before it closes the window.
+        // Escape backs out of the narrowest thing first — a note selection,
+        // then a search — and only closes the window when there's nothing left
+        // to back out of.
         w.onCancel = { [weak self] in
-            guard let self, !self.state.search.isEmpty else { return false }
-            self.state.search = ""
-            return true
+            guard let self else { return false }
+            if self.state.selectingNotes {
+                self.state.endNoteSelection()
+                return true
+            }
+            if !self.state.search.isEmpty {
+                self.state.search = ""
+                return true
+            }
+            return false
         }
 
         window = w

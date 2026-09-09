@@ -9,18 +9,56 @@ import Foundation
 // plain-text export. Notes are therefore `.md` files on disk with YAML
 // frontmatter, and export is largely "the store already is the export".
 
-enum Folder: String, CaseIterable, Identifiable, Codable {
-    case platform, career, scratch
+/// A note's folder — a name, not a fixed set of cases.
+///
+/// Folders are the user's to make: the three the app ships with are only what a
+/// new install is seeded with. The raw value is what lands in the file's
+/// frontmatter, so a folder created in the app stays legible to anything else
+/// reading the markdown directory.
+///
+/// Identity is case-insensitive — someone who types "reading" today and
+/// "Reading" tomorrow means one folder, not two — while the raw value keeps
+/// whatever capitalisation it was made with. Files written before folders were
+/// user-made carry lowercase names (`folder: platform`), which is why `label`
+/// capitalises for display instead of trusting the stored case.
+struct Folder: RawRepresentable, Codable, Hashable, Identifiable {
+    let rawValue: String
 
-    var id: String { rawValue }
-
-    var label: String {
-        switch self {
-        case .platform: "Platform"
-        case .career: "Career"
-        case .scratch: "Scratch"
-        }
+    init(rawValue: String) {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Every note belongs somewhere. An empty name would be a folder you
+        // could neither see in the list nor click your way out of.
+        self.rawValue = trimmed.isEmpty ? "Scratch" : trimmed
     }
+
+    init(_ name: String) { self.init(rawValue: name) }
+
+    var id: String { rawValue.lowercased() }
+
+    var label: String { rawValue.prefix(1).uppercased() + String(rawValue.dropFirst()) }
+
+    static func == (lhs: Folder, rhs: Folder) -> Bool { lhs.id == rhs.id }
+
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+
+    // Encoded as the bare string, so `folders.json` and the export archive read
+    // the same as the frontmatter does.
+    init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
+    static let platform = Folder("Platform")
+    static let career = Folder("Career")
+    static let scratch = Folder("Scratch")
+
+    /// The three the design draws in the folder pane, and what a new install
+    /// starts with.
+    static let starters: [Folder] = [.platform, .career, .scratch]
 }
 
 enum Lane: String, CaseIterable, Identifiable, Codable {

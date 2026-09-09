@@ -87,6 +87,20 @@ final class AppState {
     var moreOpen = false
     var pinOpen = false
 
+    /// Notes ticked in the list, and whether the list is showing its
+    /// checkboxes at all.
+    ///
+    /// Here rather than in `NotesView` so Escape can back out of a selection
+    /// from the window's cancel chain, the same way it backs out of a search.
+    var selectingNotes = false
+    var noteSelection: Set<UUID> = []
+
+    /// Leaves selection mode, dropping whatever was ticked.
+    func endNoteSelection() {
+        selectingNotes = false
+        noteSelection = []
+    }
+
     /// The bar's always-there quick-notes note, found by this id rather than
     /// by title — so renaming or reorganizing it in the full Notes UI can't
     /// orphan the bar's link to it.

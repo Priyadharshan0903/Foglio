@@ -57,12 +57,19 @@ struct NoteEditor: View {
                 .foregroundStyle(theme.text)
                 .lineLimit(1...3)
 
-            HStack(spacing: 10) {
-                Text("\(note.folder.label) · edited \(Relative.label(for: note.updatedAt)) · \(blockCount) blocks")
-                    .font(Typo.sans(11.5))
-                    .foregroundStyle(theme.muted)
-                pinMenu
-                Spacer()
+            HStack(alignment: .top, spacing: 8) {
+                // Wraps for the same reason the toolbar below does: the folder
+                // chip, the meta and the pin menu want ~440pt, and the editor
+                // pane is only ~380pt wide at the window's 900pt minimum.
+                FlowLayout(spacing: 8, lineSpacing: 6) {
+                    folderMenu
+                    Text("edited \(Relative.label(for: note.updatedAt)) · \(blockCount) blocks")
+                        .font(Typo.sans(11.5))
+                        .foregroundStyle(theme.muted)
+                        .fixedSize()
+                    pinMenu
+                }
+                Spacer(minLength: 8)
                 deleteButton
             }
             .padding(.top, 9)
@@ -96,6 +103,36 @@ struct NoteEditor: View {
         }
         .buttonStyle(.flat)
         .help("Delete this note")
+    }
+
+    /// The note's folder, and the way to change it — the meta line used to
+    /// name the folder in passing, which told you where a note lived but gave
+    /// you no way to move it.
+    private var folderMenu: some View {
+        Menu {
+            ForEach(store.folders) { folder in
+                Button(folder.label) { store.move(noteIds: [note.id], to: folder) }
+                    // The one it is already in: shown, so the list is the whole
+                    // set of folders, but not offered as a move.
+                    .disabled(folder == note.folder)
+            }
+        } label: {
+            HStack(spacing: 6) {
+                IconView(icon: .folder, size: 11, lineWidth: 1.8)
+                Text(note.folder.label).font(Typo.sans(11)).lineLimit(1)
+            }
+            .foregroundStyle(theme.muted)
+            .padding(.horizontal, 9).padding(.vertical, 4)
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(theme.line, lineWidth: 1)
+            )
+            .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Move this note to another folder")
     }
 
     private var pinMenu: some View {

@@ -3,6 +3,10 @@ import Foundation
 /// Everything, in one Codable box — the lossless half of an export.
 struct Archive: Codable, Equatable {
     var notes: [Note] = []
+    /// Optional because archives written before folders were user-made don't
+    /// have the key — and a folder list can be rebuilt from the notes, so its
+    /// absence costs only the empty folders.
+    var folders: [Folder]?
     var tasks: [TaskItem] = []
     var log: [LogEntry] = []
     var milestones: [Milestone] = []
@@ -25,6 +29,7 @@ enum Exporter {
     static func archive(from store: Store) -> Archive {
         Archive(
             notes: store.notes,
+            folders: store.folders,
             tasks: store.tasks,
             log: store.log,
             milestones: store.milestones

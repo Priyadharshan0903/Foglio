@@ -60,7 +60,9 @@ enum NoteFile {
             switch key {
             case "id": note.id = UUID(uuidString: value) ?? note.id
             case "title": note.title = value
-            case "folder": note.folder = Folder(rawValue: value) ?? .scratch
+            // Never fails: an unknown name is simply a folder this install
+            // hasn't seen yet, and an empty one falls back to Scratch.
+            case "folder": note.folder = Folder(rawValue: value)
             case "pin": note.pin = value.isEmpty ? nil : value
             case "updated": note.updatedAt = formatter.date(from: value) ?? note.updatedAt
             default: break
