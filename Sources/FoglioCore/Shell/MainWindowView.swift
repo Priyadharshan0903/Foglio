@@ -193,6 +193,9 @@ struct MainWindowView: View {
         case .calendar:
             CalendarView(state: state, store: store, calendar: calendar)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        case .trash:
+            TrashView(state: state, store: store)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 }

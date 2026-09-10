@@ -3,6 +3,11 @@ import Foundation
 /// Everything, in one Codable box — the lossless half of an export.
 struct Archive: Codable, Equatable {
     var notes: [Note] = []
+    /// Trashed notes, with their `deletedAt` stamps, so importing an archive
+    /// restores the trash and its countdowns rather than quietly dropping
+    /// notes that were still recoverable. Optional like the rest — archives
+    /// written before there was a trash don't have the key.
+    var trash: [Note]?
     /// Optional because archives written before folders were user-made don't
     /// have the key — and a folder list can be rebuilt from the notes, so its
     /// absence costs only the empty folders.
@@ -32,6 +37,7 @@ enum Exporter {
     static func archive(from store: Store) -> Archive {
         Archive(
             notes: store.notes,
+            trash: store.trash,
             folders: store.folders,
             lanes: store.lanes,
             tasks: store.tasks,

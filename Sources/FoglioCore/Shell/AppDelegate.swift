@@ -33,6 +33,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var calendarTimer: Timer?
     private var lastBadge: String?
 
+    /// Observers for the trash sweep — see `startTrashSweep()`.
+    private var sweepObservers: [NSObjectProtocol] = []
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         Debug.log("didFinishLaunching")
         Typo.registerBundledFonts()
@@ -45,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         calendar.refreshAccess()
         calendar.resumeWatching()
         startCalendarRefresh()
+        startTrashSweep()
 
         bar = BarPanelController(state: state) { [weak self] section in
             guard let self else { return }
@@ -150,6 +154,41 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     /// Typing schedules its disk write 400ms out, so quitting within that window
     /// — which is exactly what replacing the app involves — dropped the last
     /// edit. Nothing else forces the queue: the editor only flushes on blur.
+    /// Purges trashed notes past their ten days, once at launch — `store.load()`
+    /// already did that one — and then whenever the calendar day rolls over or
+    /// the app comes back to the front.
+    ///
+    /// Three triggers rather than a timer aimed at midnight:
+    ///
+    /// - `NSCalendarDayChanged` fires when the system's day rolls over, which
+    ///   covers the app being up and awake at 00:00. A hand-rolled timer
+    ///   wouldn't: it doesn't fire while the Mac is asleep, and "next
+    ///   midnight" isn't `+86400` — DST and timezone changes move it.
+    /// - `didBecomeActive` covers the day having rolled over while the Mac was
+    ///   asleep or the app was in the background, so the sweep happens the
+    ///   moment you come back to it.
+    /// - Launch covers the app having been closed at midnight entirely.
+    ///
+    /// No "already swept today" bookkeeping, because there is nothing to
+    /// protect against: expiry always lands on a midnight boundary, so a sweep
+    /// that runs hourly deletes exactly the files a sweep that runs daily
+    /// would, at the same observable moments. It touches the disk only when
+    /// something has actually expired.
+    private func startTrashSweep() {
+        let center = NotificationCenter.default
+        for name in [NSNotification.Name.NSCalendarDayChanged, NSApplication.didBecomeActiveNotification] {
+            sweepObservers.append(
+                center.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                    MainActor.assumeIsolated {
+                        guard let self else { return }
+                        let purged = self.store.purgeExpiredTrash()
+                        if purged > 0 { Debug.log("trash: purged \(purged) expired note(s)") }
+                    }
+                }
+            )
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         store.flushPendingSaves()
     }

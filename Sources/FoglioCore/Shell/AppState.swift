@@ -2,7 +2,7 @@ import SwiftUI
 import Observation
 
 enum Section: String, CaseIterable, Identifiable {
-    case capture, notes, tasks, calendar, settings, roadmap, week
+    case capture, notes, tasks, calendar, settings, roadmap, week, trash
 
     var id: String { rawValue }
 
@@ -15,6 +15,7 @@ enum Section: String, CaseIterable, Identifiable {
         case .settings: "Settings"
         case .roadmap: "Roadmap"
         case .week: "Weekly review"
+        case .trash: "Trash"
         }
     }
 
@@ -27,14 +28,18 @@ enum Section: String, CaseIterable, Identifiable {
         case .settings: .settings
         case .roadmap: .roadmap
         case .week: .chart
+        case .trash: .trash
         }
     }
 
     /// The five that appear on the floating bar (`nav`, Day Log.dc.html:873).
     static let barItems: [Section] = [.capture, .notes, .tasks, .calendar, .settings]
 
-    /// The bar's five plus the two the rail adds (`railExtra`, :880).
-    static let railItems: [Section] = barItems + [.roadmap, .week]
+    /// The bar's five plus the three the rail adds (`railExtra`, :880).
+    ///
+    /// Trash sits at the end: it is somewhere you go to undo something, not
+    /// somewhere you work, so it shouldn't sit among the daily sections.
+    static let railItems: [Section] = barItems + [.roadmap, .week, .trash]
 }
 
 /// Which screen edge the strip is docked to.
