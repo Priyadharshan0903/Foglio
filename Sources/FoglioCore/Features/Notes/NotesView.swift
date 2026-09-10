@@ -7,10 +7,11 @@ struct NotesView: View {
 
     /// The notes a delete has been asked for but not yet confirmed.
     ///
-    /// Deleting removes the markdown file from disk, so it is not something to
-    /// do on a stray click — and there is no undo stack to fall back on. One
-    /// list rather than one note, because the same dialog confirms a whole
-    /// selection.
+    /// Still confirmed, though deleting is no longer destructive: it moves the
+    /// note to the trash, where it keeps for ten days. The dialog stays
+    /// because a note vanishing from the list is a surprise worth one click,
+    /// not because it can't be undone. One list rather than one note, because
+    /// the same dialog confirms a whole selection.
     @State private var pendingDeletion: [Note] = []
 
     /// The folder currently being named, or renamed — see `FolderEdit`.
@@ -47,15 +48,18 @@ struct NotesView: View {
             isPresented: Binding(get: { !pendingDeletion.isEmpty }, set: { if !$0 { pendingDeletion = [] } }),
             titleVisibility: .visible
         ) {
-            Button(pendingDeletion.count == 1 ? "Delete" : "Delete \(pendingDeletion.count) Notes", role: .destructive) {
+            Button(
+                pendingDeletion.count == 1 ? "Move to Trash" : "Move \(pendingDeletion.count) Notes to Trash",
+                role: .destructive
+            ) {
                 confirmDeletion()
             }
             Button("Cancel", role: .cancel) { pendingDeletion = [] }
         } message: {
             Text(
                 pendingDeletion.count == 1
-                    ? "Its markdown file is removed from disk. This can't be undone."
-                    : "Their markdown files are removed from disk. This can't be undone."
+                    ? "It stays in the trash for \(Store.trashRetentionDays) days, and can be put back until then."
+                    : "They stay in the trash for \(Store.trashRetentionDays) days, and can be put back until then."
             )
         }
     }
@@ -65,9 +69,9 @@ struct NotesView: View {
     private var deletionTitle: String {
         guard let first = pendingDeletion.first else { return "" }
         if pendingDeletion.count == 1 {
-            return "Delete “\(title(of: first))”?"
+            return "Move “\(title(of: first))” to the trash?"
         }
-        return "Delete \(pendingDeletion.count) notes?"
+        return "Move \(pendingDeletion.count) notes to the trash?"
     }
 
     private func title(of note: Note) -> String {
@@ -82,7 +86,7 @@ struct NotesView: View {
         // whatever happens to top the list.
         state.activeNoteId = Self.survivor(after: ids, in: visibleNotes, current: state.activeNoteId)
         state.activeBlock = nil
-        store.deleteNotes(ids: ids)
+        store.trashNotes(ids: ids)
 
         state.noteSelection.subtract(ids)
         if state.noteSelection.isEmpty { state.selectingNotes = false }
@@ -417,7 +421,7 @@ struct NotesView: View {
             } label: {
                 HStack(spacing: 5) {
                     IconView(icon: .trash, size: 12, lineWidth: 1.6)
-                    Text("Delete").font(Typo.sans(11.5))
+                    Text("Trash").font(Typo.sans(11.5))
                 }
                 .foregroundStyle(chosen.isEmpty ? theme.muted : theme.clay)
                 .padding(.horizontal, 7).padding(.vertical, 3)
@@ -536,7 +540,7 @@ struct NotesView: View {
             }
         }
         Divider()
-        Button(chosen.count == 1 ? "Delete Note…" : "Delete \(chosen.count) Notes…", role: .destructive) {
+        Button(chosen.count == 1 ? "Move to Trash…" : "Move \(chosen.count) Notes to Trash…", role: .destructive) {
             pendingDeletion = chosen
         }
     }
