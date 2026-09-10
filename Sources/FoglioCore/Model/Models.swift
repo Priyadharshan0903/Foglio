@@ -61,25 +61,72 @@ struct Folder: RawRepresentable, Codable, Hashable, Identifiable {
     static let starters: [Folder] = [.platform, .career, .scratch]
 }
 
-enum Lane: String, CaseIterable, Identifiable, Codable {
-    case priority, ordinary, delegate
+/// A task's lane — its status column on the board, and a name rather than a
+/// fixed set of cases.
+///
+/// The same reasoning as `Folder`: "Priority / Ordinary / Delegate" is one
+/// person's way of splitting work, so the three the app ships with are what a
+/// new install is *seeded* with, not the only statuses there can be. The board
+/// shows `Store.lanes` in the order it holds them, which is what makes the
+/// columns reorderable — a lane's position is a property of the list, not of
+/// the lane.
+///
+/// Identity is case-insensitive — "blocked" today and "Blocked" tomorrow mean
+/// one column, not two — while the raw value keeps whatever capitalisation it
+/// was made with. `tasks.json` written before lanes were user-made stores the
+/// old lowercase raw values (`lane: priority`), which is why `label`
+/// capitalises for display instead of trusting the stored case.
+struct Lane: RawRepresentable, Codable, Hashable, Identifiable {
+    let rawValue: String
 
-    var id: String { rawValue }
-
-    /// `laneName` (Day Log.dc.html:801).
-    var label: String {
-        switch self {
-        case .priority: "Priority"
-        case .ordinary: "Ordinary"
-        case .delegate: "Delegate"
-        }
+    init(rawValue: String) {
+        let trimmed = rawValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Every task is in some column. An empty name would be a lane you could
+        // neither see on the board nor drag a row out of.
+        self.rawValue = trimmed.isEmpty ? "Priority" : trimmed
     }
 
+    init(_ name: String) { self.init(rawValue: name) }
+
+    var id: String { rawValue.lowercased() }
+
+    var label: String { rawValue.prefix(1).uppercased() + String(rawValue.dropFirst()) }
+
+    static func == (lhs: Lane, rhs: Lane) -> Bool { lhs.id == rhs.id }
+
+    func hash(into hasher: inout Hasher) { hasher.combine(id) }
+
+    // Encoded as the bare string, so a lane reads the same in `lanes.json`, in
+    // `tasks.json` and in the export archive — and so tasks written by the
+    // enum version of this type still decode.
+    init(from decoder: Decoder) throws {
+        self.init(rawValue: try decoder.singleValueContainer().decode(String.self))
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        try container.encode(rawValue)
+    }
+
+    static let priority = Lane("Priority")
+    static let ordinary = Lane("Ordinary")
+    static let delegate = Lane("Delegate")
+
+    /// The three the design draws on the board, and what a new install starts
+    /// with (`laneName`, Day Log.dc.html:801).
+    static let starters: [Lane] = [.priority, .ordinary, .delegate]
+
+    /// Placeholder for a column with nothing in it.
+    ///
+    /// The shipped three keep the copy the design wrote for them; a lane
+    /// someone made themselves gets a neutral line, since the app has no idea
+    /// what "Blocked" or "This week" is supposed to feel like when it's empty.
     var emptyText: String {
-        switch self {
-        case .priority: "Nothing urgent."
-        case .ordinary: "Nothing queued."
-        case .delegate: "No follow ups."
+        switch id {
+        case Lane.priority.id: "Nothing urgent."
+        case Lane.ordinary.id: "Nothing queued."
+        case Lane.delegate.id: "No follow ups."
+        default: "Nothing here."
         }
     }
 }

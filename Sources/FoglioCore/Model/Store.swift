@@ -9,6 +9,7 @@ import Observation
 ///     Foglio/
 ///       notes/<slug>-<id8>.md    one markdown file per note
 ///       folders.json
+///       lanes.json
 ///       tasks.json
 ///       log.json
 ///       milestones.json
@@ -25,6 +26,12 @@ final class Store {
     /// folder you have just made — and one you have emptied — has no notes to
     /// derive it from, and should still be there.
     private(set) var folders: [Folder] = []
+    /// Every lane the task board shows, in the order it shows them.
+    ///
+    /// Its own list for the same reason `folders` is: a lane you have just
+    /// made — and one you have emptied — has no tasks to be derived from, and
+    /// the *order* of the columns exists nowhere else at all.
+    private(set) var lanes: [Lane] = []
     private(set) var tasks: [TaskItem] = []
     private(set) var log: [LogEntry] = []
     private(set) var milestones: [Milestone] = []
@@ -54,6 +61,7 @@ final class Store {
 
     private var notesDir: URL { root.appendingPathComponent("notes", isDirectory: true) }
     private var foldersURL: URL { root.appendingPathComponent("folders.json") }
+    private var lanesURL: URL { root.appendingPathComponent("lanes.json") }
     private var tasksURL: URL { root.appendingPathComponent("tasks.json") }
     private var logURL: URL { root.appendingPathComponent("log.json") }
     private var milestonesURL: URL { root.appendingPathComponent("milestones.json") }
@@ -69,6 +77,7 @@ final class Store {
         notes = loadNotes()
 
         folders = decode([Folder].self, from: foldersURL) ?? Folder.starters
+        lanes = decode([Lane].self, from: lanesURL) ?? Lane.starters
         tasks = decode([TaskItem].self, from: tasksURL) ?? []
         log = decode([LogEntry].self, from: logURL) ?? []
         milestones = decode([Milestone].self, from: milestonesURL) ?? []
@@ -83,6 +92,7 @@ final class Store {
             saveLog()
         }
         reconcileFolders()
+        reconcileLanes()
         saveMilestones()
     }
 
@@ -100,6 +110,26 @@ final class Store {
         }
         if !seen.contains(Folder.scratch.id) { folders.append(.scratch) }
         saveFolders()
+    }
+
+    /// Makes sure every lane a task claims is a column on the board, and that
+    /// there is at least one column to begin with.
+    ///
+    /// Same job as `reconcileFolders`, with one extra worry: `tasks.json` is
+    /// hand-editable and an imported archive brings its own lanes, so a task
+    /// can name a column that isn't there — and a task in no visible column is
+    /// a task you can't reach. Lanes discovered this way join the end rather
+    /// than displacing the order already chosen.
+    private func reconcileLanes() {
+        var seen = Set(lanes.map(\.id))
+        for task in tasks where !seen.contains(task.lane.id) {
+            lanes.append(task.lane)
+            seen.insert(task.lane.id)
+        }
+        // An empty board has no column to drop a new task into, and no header
+        // to hang the "new lane" button off.
+        if lanes.isEmpty { lanes = Lane.starters }
+        saveLanes()
     }
 
     /// Reads every note file, collapsing duplicate ids left behind by the
@@ -314,9 +344,96 @@ final class Store {
 
     private func saveNotes() { notes.forEach(saveNote) }
 
+    // MARK: - Lanes
+
+    /// Where a task goes when the lane it named isn't on the board.
+    ///
+    /// The first column, because that is the one the board treats as the
+    /// urgent end — a task with nowhere to go is better surfaced than buried.
+    var defaultLane: Lane { lanes.first ?? .priority }
+
+    /// Creates a lane, or hands back the one that already has that name —
+    /// as with folders, typing an existing name means "that column".
+    @discardableResult
+    func addLane(named name: String) -> Lane? {
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        let lane = Lane(name)
+        if let existing = lanes.first(where: { $0 == lane }) { return existing }
+        lanes.append(lane)
+        saveLanes()
+        return lane
+    }
+
+    /// Renames in place, re-filing the tasks inside it. Renaming onto a name
+    /// that already exists merges the two columns, for the same reason folders
+    /// do: two rows meaning one lane is something nothing downstream — the
+    /// board, the export, `tasks.json` — could tell apart.
+    func renameLane(_ lane: Lane, to name: String) {
+        guard !name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let index = lanes.firstIndex(of: lane)
+        else { return }
+
+        let renamed = Lane(name)
+        if renamed != lane, lanes.contains(renamed) {
+            lanes.remove(at: index)
+        } else {
+            lanes[index] = renamed
+        }
+        saveLanes()
+        reassign(tasksIn: lane, to: renamed)
+    }
+
+    /// Removing a lane keeps its tasks — they fall back to the first column
+    /// that's left, which is why the last remaining lane can't be removed.
+    func deleteLane(_ lane: Lane) {
+        guard lanes.count > 1, let index = lanes.firstIndex(of: lane) else { return }
+        lanes.remove(at: index)
+        saveLanes()
+        reassign(tasksIn: lane, to: defaultLane)
+    }
+
+    /// Reorders the columns, moving `lane` so it sits at `index` in the list
+    /// as it reads *after* the move.
+    ///
+    /// Taking a destination index rather than SwiftUI's `move(fromOffsets:
+    /// toOffset:)` because the board is an `HStack` of columns, not a `List`:
+    /// the drag hands over the lane it was dropped on, and "put it where that
+    /// one is" is the whole gesture.
+    func moveLane(_ lane: Lane, to index: Int) {
+        guard let from = lanes.firstIndex(of: lane) else { return }
+        let to = max(0, min(index, lanes.count - 1))
+        guard from != to else { return }
+        lanes.remove(at: from)
+        lanes.insert(lane, at: to)
+        saveLanes()
+    }
+
+    /// Re-files every task in `lane`, including when only its capitalisation
+    /// changed — the task's own copy of the name has to follow the rename.
+    private func reassign(tasksIn lane: Lane, to destination: Lane) {
+        var touched = false
+        for i in tasks.indices
+        where tasks[i].lane == lane && tasks[i].lane.rawValue != destination.rawValue {
+            tasks[i].lane = destination
+            touched = true
+        }
+        if touched { saveTasks() }
+    }
+
+    private func saveLanes() { write(lanes, to: lanesURL) }
+
     // MARK: - Tasks
 
+    /// Adds a task, snapping it to a column that exists.
+    ///
+    /// Callers name a lane by intent — the calendar's follow-up wants
+    /// Delegate, a note's todo wants Priority — and that lane may since have
+    /// been deleted. Landing in the default column is better than either
+    /// resurrecting a lane the user removed or filing the task somewhere the
+    /// board never draws.
     func addTask(_ task: TaskItem) {
+        var task = task
+        if !lanes.contains(task.lane) { task.lane = defaultLane }
         tasks.append(task)
         saveTasks()
     }
@@ -324,6 +441,20 @@ final class Store {
     func update(_ task: TaskItem) {
         guard let i = tasks.firstIndex(where: { $0.id == task.id }) else { return }
         tasks[i] = task
+        saveTasks()
+    }
+
+    /// Edits a task's text in place.
+    ///
+    /// Separate from `update` so the row editor can hand over just the two
+    /// fields it shows, without having to carry `done`, `completedAt` and
+    /// `lane` through the edit and risk writing back a stale copy of them.
+    /// A blank label is a cancelled edit, not a request for a nameless task.
+    func edit(taskId: UUID, label: String, meta: String) {
+        let label = label.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !label.isEmpty, let i = tasks.firstIndex(where: { $0.id == taskId }) else { return }
+        tasks[i].label = label
+        tasks[i].meta = meta.trimmingCharacters(in: .whitespacesAndNewlines)
         saveTasks()
     }
 
@@ -336,6 +467,10 @@ final class Store {
         guard let i = tasks.firstIndex(where: { $0.id == taskId }) else { return }
         tasks[i].lane = lane
         if lane == .delegate && tasks[i].meta.isEmpty { tasks[i].meta = "Follow up" }
+        if !lanes.contains(lane) {
+            lanes.append(lane)
+            saveLanes()
+        }
         saveTasks()
     }
 
@@ -407,9 +542,14 @@ final class Store {
         milestones = archive.milestones
 
         // Older archives carry the folder on each note but no folder list, so
-        // the sidebar is rebuilt from whatever arrived.
+        // the sidebar is rebuilt from whatever arrived. Lanes are the same
+        // story one step further on: an archive predating user-made lanes has
+        // only the lane named on each task, and `reconcileLanes` rebuilds the
+        // board from those.
         folders = archive.folders ?? Folder.starters
+        lanes = archive.lanes ?? []
         reconcileFolders()
+        reconcileLanes()
 
         saveNotes()
         saveTasks()
