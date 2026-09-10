@@ -7,6 +7,9 @@ struct Archive: Codable, Equatable {
     /// have the key — and a folder list can be rebuilt from the notes, so its
     /// absence costs only the empty folders.
     var folders: [Folder]?
+    /// Optional for the same reason `folders` is — archives written before
+    /// lanes were user-made carry only the lane named on each task.
+    var lanes: [Lane]?
     var tasks: [TaskItem] = []
     var log: [LogEntry] = []
     var milestones: [Milestone] = []
@@ -30,6 +33,7 @@ enum Exporter {
         Archive(
             notes: store.notes,
             folders: store.folders,
+            lanes: store.lanes,
             tasks: store.tasks,
             log: store.log,
             milestones: store.milestones
@@ -62,7 +66,7 @@ enum Exporter {
             )
         }
 
-        try tasksMarkdown(archive.tasks).write(
+        try tasksMarkdown(archive.tasks, lanes: archive.lanes).write(
             to: root.appendingPathComponent("tasks.md"),
             atomically: true,
             encoding: .utf8
@@ -104,10 +108,20 @@ enum Exporter {
         return out.joined(separator: "\n") + "\n"
     }
 
-    static func tasksMarkdown(_ tasks: [TaskItem]) -> String {
+    /// The lanes named by `tasks`, each once, in the order they first appear.
+    private static func laneOrder(in tasks: [TaskItem]) -> [Lane] {
+        var seen = Set<String>()
+        return tasks.map(\.lane).filter { seen.insert($0.id).inserted }
+    }
+
+    /// `lanes` is the board's column order, so the export reads top-to-bottom
+    /// the way the board reads left-to-right. Passing none — an archive from
+    /// before lanes were user-made, or a caller that only has tasks — falls
+    /// back to the order the lanes first appear in the tasks themselves.
+    static func tasksMarkdown(_ tasks: [TaskItem], lanes: [Lane]? = nil) -> String {
         var out = ["# Tasks", ""]
 
-        for lane in Lane.allCases {
+        for lane in lanes ?? laneOrder(in: tasks) {
             let open = tasks.filter { $0.lane == lane && !$0.done }
             guard !open.isEmpty else { continue }
             out.append("## \(lane.label)")

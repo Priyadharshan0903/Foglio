@@ -79,10 +79,17 @@ struct CaptureView: View {
         }
     }
 
+    /// The lane a captured task files into, kept honest against the board: the
+    /// remembered choice outlives the lane it names, which may since have been
+    /// deleted on the task page.
+    private var draftLane: Lane {
+        store.lanes.contains(state.draftLane) ? state.draftLane : store.defaultLane
+    }
+
     private var laneRow: some View {
         HStack(spacing: 6) {
-            ForEach(Lane.allCases) { lane in
-                let selected = state.draftLane == lane
+            ForEach(store.lanes) { lane in
+                let selected = draftLane == lane
                 Button { state.draftLane = lane } label: {
                     Text(lane.label)
                         .font(Typo.sans(11, .medium))
@@ -155,10 +162,11 @@ struct CaptureView: View {
     private func addTask() {
         let label = state.draft.trimmingCharacters(in: .whitespaces)
         guard !label.isEmpty else { return }
+        let lane = draftLane
         store.addTask(TaskItem(
             label: label,
-            lane: state.draftLane,
-            meta: state.draftLane == .delegate ? "Follow up" : ""
+            lane: lane,
+            meta: lane == .delegate ? "Follow up" : ""
         ))
         state.draft = ""
     }
