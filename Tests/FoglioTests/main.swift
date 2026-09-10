@@ -20,6 +20,7 @@ MainActor.assumeIsolated { folderTests() }
 MainActor.assumeIsolated { selectionTests() }
 MainActor.assumeIsolated { folderExportTests() }
 MainActor.assumeIsolated { tasksTests() }
+MainActor.assumeIsolated { laneTests() }
 MainActor.assumeIsolated { exportTests() }
 
 Check.finish()
