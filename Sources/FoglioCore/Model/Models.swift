@@ -145,6 +145,15 @@ struct Note: Identifiable, Equatable, Codable {
     var pin: String?
     var updatedAt: Date = Clock.now()
 
+    /// When this note was moved to the trash, or nil if it isn't there.
+    ///
+    /// Only ever set on notes in `Store.trash`; a note in `Store.notes` always
+    /// has nil. The store keeps the two lists apart rather than filtering one
+    /// on this field, so every existing reader of `notes` — search, pins,
+    /// wiki-links, folder counts, the export — excludes trashed notes without
+    /// knowing the trash exists.
+    var deletedAt: Date?
+
     var blocks: [Block] {
         get { Markdown.parse(body) }
         set { body = Markdown.serialize(newValue) }

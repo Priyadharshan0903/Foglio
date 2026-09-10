@@ -8,6 +8,10 @@ import Foundation
 ///     pin: Kubernetes, to CKA
 ///     updated: 2026-08-31T14:20:00Z
 ///     ---
+///
+/// A note in the trash carries one extra key, `deleted:`, holding the moment
+/// it was trashed — which is what the ten-day countdown is measured from, and
+/// what makes the trash survive a relaunch.
 ///     # Reconcile, don't RPC
 ///
 /// Values run to end-of-line and are never quoted, so a title containing a colon
@@ -33,6 +37,11 @@ enum NoteFile {
             head.append("pin: \(pin)")
         }
         head.append("updated: \(formatter.string(from: note.updatedAt))")
+        // Only written for notes in the trash, so a file in `notes/` never
+        // carries the key at all — the folder stays readable as plain notes.
+        if let deletedAt = note.deletedAt {
+            head.append("deleted: \(formatter.string(from: deletedAt))")
+        }
         head.append(fence)
         return head.joined(separator: "\n") + "\n" + note.body
     }
@@ -65,6 +74,7 @@ enum NoteFile {
             case "folder": note.folder = Folder(rawValue: value)
             case "pin": note.pin = value.isEmpty ? nil : value
             case "updated": note.updatedAt = formatter.date(from: value) ?? note.updatedAt
+            case "deleted": note.deletedAt = formatter.date(from: value)
             default: break
             }
         }

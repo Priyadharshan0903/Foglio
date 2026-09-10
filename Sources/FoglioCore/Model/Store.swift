@@ -8,6 +8,7 @@ import Observation
 ///
 ///     Foglio/
 ///       notes/<slug>-<id8>.md    one markdown file per note
+///       trash/<slug>-<id8>.md    trashed notes, awaiting the ten-day purge
 ///       folders.json
 ///       lanes.json
 ///       tasks.json
@@ -20,6 +21,12 @@ import Observation
 @MainActor
 final class Store {
     private(set) var notes: [Note] = []
+    /// Notes moved to the trash, newest first.
+    ///
+    /// A separate list rather than a flag on `notes`, so that nothing which
+    /// reads `notes` — search, the folder counts, pin targets, wiki-links,
+    /// the export — has to learn about the trash to keep trashed notes out.
+    private(set) var trash: [Note] = []
     /// Every folder the sidebar offers, in the order it shows them.
     ///
     /// Kept as its own list rather than derived from the notes, because a
@@ -47,6 +54,9 @@ final class Store {
     /// files behind, which then reloaded as 11 duplicate notes.
     private var fileNames: [UUID: String] = [:]
 
+    /// The same, for the files under `trash/`.
+    private var trashFileNames: [UUID: String] = [:]
+
     /// Pending debounced disk writes, keyed by note.
     private var pendingSaves: [UUID: Task<Void, Never>] = [:]
 
@@ -60,6 +70,7 @@ final class Store {
     }
 
     private var notesDir: URL { root.appendingPathComponent("notes", isDirectory: true) }
+    private var trashDir: URL { root.appendingPathComponent("trash", isDirectory: true) }
     private var foldersURL: URL { root.appendingPathComponent("folders.json") }
     private var lanesURL: URL { root.appendingPathComponent("lanes.json") }
     private var tasksURL: URL { root.appendingPathComponent("tasks.json") }
@@ -75,6 +86,7 @@ final class Store {
         try? FileManager.default.createDirectory(at: notesDir, withIntermediateDirectories: true)
 
         notes = loadNotes()
+        trash = loadTrash()
 
         folders = decode([Folder].self, from: foldersURL) ?? Folder.starters
         lanes = decode([Lane].self, from: lanesURL) ?? Lane.starters
@@ -94,6 +106,10 @@ final class Store {
         reconcileFolders()
         reconcileLanes()
         saveMilestones()
+
+        // Before anything can render. A note whose ten days ran out while the
+        // app was closed should never be visible, however late the sweep is.
+        purgeExpiredTrash()
     }
 
     /// Makes sure every folder a note claims is one the sidebar lists.
@@ -165,6 +181,29 @@ final class Store {
 
         fileNames = names
         return byId.values.sorted { $0.updatedAt > $1.updatedAt }
+    }
+
+    /// Reads the trashed notes. Anything under `trash/` without a `deleted:`
+    /// stamp is treated as having been trashed just now rather than dropped —
+    /// a file moved in by hand should still be recoverable, and giving it the
+    /// full ten days is the forgiving reading.
+    private func loadTrash() -> [Note] {
+        let urls = (try? FileManager.default.contentsOfDirectory(at: trashDir, includingPropertiesForKeys: nil))?
+            .filter { $0.pathExtension == "md" } ?? []
+
+        var notes: [Note] = []
+        var names: [UUID: String] = [:]
+
+        for url in urls {
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            var note = NoteFile.decode(text)
+            if note.deletedAt == nil { note.deletedAt = Clock.now() }
+            notes.append(note)
+            names[note.id] = url.lastPathComponent
+        }
+
+        trashFileNames = names
+        return notes.sorted { ($0.deletedAt ?? .distantPast) > ($1.deletedAt ?? .distantPast) }
     }
 
     private func decode<T: Decodable>(_ type: T.Type, from url: URL) -> T? {
@@ -239,20 +278,156 @@ final class Store {
         return note
     }
 
-    func deleteNote(id: UUID) {
-        guard let i = notes.firstIndex(where: { $0.id == id }) else { return }
-        notes.remove(at: i)
+    /// Removes a note outright — the file goes from disk with no way back.
+    ///
+    /// Private because nothing in the UI should reach it directly any more:
+    /// deleting is `trashNote`, and the only routes to real destruction are
+    /// emptying the trash, deleting from inside it, or the ten-day purge.
+    private func destroyNote(id: UUID) {
         pendingSaves[id]?.cancel()
         pendingSaves[id] = nil
-        if let name = fileNames.removeValue(forKey: id) {
-            try? FileManager.default.removeItem(at: notesDir.appendingPathComponent(name))
+
+        if let i = notes.firstIndex(where: { $0.id == id }) {
+            notes.remove(at: i)
+            if let name = fileNames.removeValue(forKey: id) {
+                try? FileManager.default.removeItem(at: notesDir.appendingPathComponent(name))
+            }
+        }
+        if let i = trash.firstIndex(where: { $0.id == id }) {
+            trash.remove(at: i)
+            if let name = trashFileNames.removeValue(forKey: id) {
+                try? FileManager.default.removeItem(at: trashDir.appendingPathComponent(name))
+            }
         }
     }
 
-    /// Deletes several notes as one action, so a bulk delete is one pass and
+    // MARK: - Trash
+
+    /// How long a trashed note is kept, in whole days.
+    static let trashRetentionDays = 10
+
+    /// Moves a note to the trash: out of `notes`, into `trash`, and its file
+    /// from `notes/` to `trash/`.
+    ///
+    /// The file moves rather than being rewritten, so a note whose title has
+    /// drifted from its filename keeps the name it already had — and the
+    /// notes directory is left holding only notes.
+    func trashNote(id: UUID) {
+        guard let i = notes.firstIndex(where: { $0.id == id }) else { return }
+
+        // Anything still queued belongs to the version being trashed, and
+        // would otherwise write the file back into `notes/` after the move.
+        pendingSaves[id]?.cancel()
+        pendingSaves[id] = nil
+
+        var note = notes.remove(at: i)
+        note.deletedAt = Clock.now()
+        trash.insert(note, at: 0)
+
+        let name = fileNames.removeValue(forKey: id) ?? NoteFile.filename(for: note)
+        trashFileNames[id] = name
+        move(note, named: name, from: notesDir, to: trashDir)
+    }
+
+    /// Trashes several notes as one action, so a bulk delete is one pass and
     /// one confirmation rather than a stutter of list updates.
-    func deleteNotes(ids: some Sequence<UUID>) {
-        for id in ids { deleteNote(id: id) }
+    func trashNotes(ids: some Sequence<UUID>) {
+        for id in ids { trashNote(id: id) }
+    }
+
+    /// Puts a note back where it came from, clearing its deletion stamp — and
+    /// with it the countdown, which is only ever derived from that stamp.
+    func restoreNote(id: UUID) {
+        guard let i = trash.firstIndex(where: { $0.id == id }) else { return }
+
+        var note = trash.remove(at: i)
+        note.deletedAt = nil
+        // Its folder may have been deleted while it sat in the trash, in which
+        // case it comes back to Scratch rather than to a folder that is gone.
+        if !folders.contains(note.folder) { note.folder = .scratch }
+        notes.insert(note, at: 0)
+
+        let name = trashFileNames.removeValue(forKey: id) ?? NoteFile.filename(for: note)
+        fileNames[id] = name
+        move(note, named: name, from: trashDir, to: notesDir)
+    }
+
+    /// Destroys one trashed note now, without waiting out its ten days.
+    func deleteFromTrash(id: UUID) {
+        guard trash.contains(where: { $0.id == id }) else { return }
+        destroyNote(id: id)
+    }
+
+    func emptyTrash() {
+        for note in trash { destroyNote(id: note.id) }
+    }
+
+    /// When a note trashed at `deletedAt` stops being recoverable: midnight at
+    /// the end of its tenth full day, so a note trashed at 23:59 gets the same
+    /// ten days as one trashed at 00:01.
+    static func trashExpiry(deletedAt: Date, calendar: Calendar = .current) -> Date {
+        let day = calendar.startOfDay(for: deletedAt)
+        return calendar.date(byAdding: .day, value: trashRetentionDays + 1, to: day) ?? day
+    }
+
+    /// Whole days left before `note` is purged, counting today. Zero means it
+    /// goes at tonight's midnight.
+    static func trashDaysRemaining(
+        _ note: Note,
+        asOf now: Date = Clock.now(),
+        calendar: Calendar = .current
+    ) -> Int {
+        guard let deletedAt = note.deletedAt else { return trashRetentionDays }
+        let lastDay = calendar.date(
+            byAdding: .day, value: -1, to: trashExpiry(deletedAt: deletedAt, calendar: calendar)
+        ) ?? now
+        let days = calendar.dateComponents(
+            [.day], from: calendar.startOfDay(for: now), to: calendar.startOfDay(for: lastDay)
+        ).day ?? 0
+        return max(0, days)
+    }
+
+    /// The trashed notes still within their ten days.
+    ///
+    /// Filtered here rather than trusting the purge to have run: expiry is a
+    /// comparison against the clock, so an expired note is invisible whether
+    /// or not the sweep that removes its file has happened yet. That makes the
+    /// sweep a way of reclaiming disk, not the thing deciding what you see.
+    func activeTrash(asOf now: Date = Clock.now()) -> [Note] {
+        trash.filter { note in
+            guard let deletedAt = note.deletedAt else { return true }
+            return Store.trashExpiry(deletedAt: deletedAt) > now
+        }
+    }
+
+    /// Destroys every trashed note past its ten days. Safe to call as often as
+    /// you like — it touches the disk only when something has actually
+    /// expired, and expiry lands on midnight, so running it hourly and running
+    /// it daily delete the same files at the same observable moments.
+    @discardableResult
+    func purgeExpiredTrash(asOf now: Date = Clock.now()) -> Int {
+        let expired = trash.filter { note in
+            guard let deletedAt = note.deletedAt else { return false }
+            return Store.trashExpiry(deletedAt: deletedAt) <= now
+        }
+        for note in expired { destroyNote(id: note.id) }
+        return expired.count
+    }
+
+    /// Moves a note's file between the two directories, falling back to a
+    /// rewrite if the move can't be done — the in-memory lists have already
+    /// changed by this point, and a note that exists in one and not the other
+    /// would come back from the dead on next launch.
+    private func move(_ note: Note, named name: String, from source: URL, to destination: URL) {
+        try? FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+        let to = destination.appendingPathComponent(name)
+        try? FileManager.default.removeItem(at: to)
+
+        // The stamp is part of the file, so the text is rewritten rather than
+        // the bytes moved — `deleted:` has just been added or cleared.
+        if (try? NoteFile.encode(note).write(to: to, atomically: true, encoding: .utf8)) != nil {
+            try? FileManager.default.removeItem(at: source.appendingPathComponent(name))
+        }
     }
 
     // MARK: - Folders
@@ -343,6 +518,23 @@ final class Store {
     }
 
     private func saveNotes() { notes.forEach(saveNote) }
+
+    /// Writes the whole trash out, rebuilding the filename map — used after an
+    /// import, where the notes arrived as values with no files behind them.
+    private func saveTrash() {
+        try? FileManager.default.createDirectory(at: trashDir, withIntermediateDirectories: true)
+        trashFileNames = [:]
+        for var note in trash {
+            // An imported note that lost its stamp still gets a countdown,
+            // rather than sitting in the trash forever.
+            if note.deletedAt == nil { note.deletedAt = Clock.now() }
+            let name = NoteFile.filename(for: note)
+            trashFileNames[note.id] = name
+            try? NoteFile.encode(note).write(
+                to: trashDir.appendingPathComponent(name), atomically: true, encoding: .utf8
+            )
+        }
+    }
 
     // MARK: - Lanes
 
@@ -530,13 +722,15 @@ final class Store {
     /// longer represented are removed, so importing into a populated store
     /// leaves it matching the archive rather than merged with it.
     func replaceAll(with archive: Archive) {
-        if let existing = try? FileManager.default.contentsOfDirectory(at: notesDir, includingPropertiesForKeys: nil) {
+        for directory in [notesDir, trashDir] {
+            let existing = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
             for url in existing where url.pathExtension == "md" {
                 try? FileManager.default.removeItem(at: url)
             }
         }
 
         notes = archive.notes
+        trash = archive.trash ?? []
         tasks = archive.tasks
         log = archive.log
         milestones = archive.milestones
@@ -552,8 +746,13 @@ final class Store {
         reconcileLanes()
 
         saveNotes()
+        saveTrash()
         saveTasks()
         saveLog()
         saveMilestones()
+
+        // An archive can be old enough that notes in it are already past their
+        // ten days, in which case importing shouldn't hand them back.
+        purgeExpiredTrash()
     }
 }
