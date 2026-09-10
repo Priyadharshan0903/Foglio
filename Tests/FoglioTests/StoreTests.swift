@@ -258,7 +258,7 @@ func renameTests() {
         Check.equal(remaining.count, 1, "the stale files are deleted from disk")
     }
 
-    Check.suite("Deleting a note") {
+    Check.suite("Trashing a note") {
         let (store, root) = freshStore()
         defer { try? FileManager.default.removeItem(at: root) }
         let notesDir = root.appendingPathComponent("notes")
@@ -274,9 +274,10 @@ func renameTests() {
         store.upsert(note)
         Check.equal(fileCount(), before + 1, "the note has a file to begin with")
 
-        store.deleteNote(id: note.id)
-        Check.expect(store.note(id: note.id) == nil, "the note is gone from memory")
-        Check.equal(fileCount(), before, "and its file is gone from disk")
+        store.trashNote(id: note.id)
+        Check.expect(store.note(id: note.id) == nil, "the note leaves the note list")
+        Check.equal(fileCount(), before, "and its file leaves the notes directory")
+        Check.expect(store.trash.contains { $0.id == note.id }, "landing in the trash instead")
 
         // The bug this guards: a delete that only drops the in-memory copy
         // leaves the file behind, so the note reappears on next launch.
@@ -286,9 +287,13 @@ func renameTests() {
             !reopened.notes.contains { $0.id == note.id },
             "it does not come back on reload"
         )
+        Check.expect(
+            reopened.trash.contains { $0.id == note.id },
+            "but it is still in the trash after one — the file really moved, it wasn't dropped"
+        )
     }
 
-    Check.suite("Deleting a note mid-edit") {
+    Check.suite("Trashing a note mid-edit") {
         let (store, root) = freshStore()
         defer { try? FileManager.default.removeItem(at: root) }
 
@@ -297,7 +302,7 @@ func renameTests() {
         var note = store.newNote(in: .scratch)
         note.title = "Half typed"
         store.upsert(note, debounced: true)
-        store.deleteNote(id: note.id)
+        store.trashNote(id: note.id)
 
         let deadline = Date().addingTimeInterval(1)
         while Date() < deadline {
@@ -490,8 +495,8 @@ func folderTests() {
         let keeper = store.newNote(in: .scratch)
         Check.equal(fileCount(), before + 4, "four notes, four files")
 
-        store.deleteNotes(ids: doomed.map(\.id))
-        Check.equal(fileCount(), before + 1, "only the untouched note's file is left")
+        store.trashNotes(ids: doomed.map(\.id))
+        Check.equal(fileCount(), before + 1, "only the untouched note's file is left in notes/")
         Check.expect(store.note(id: keeper.id) != nil, "and it is still there in memory")
         Check.expect(doomed.allSatisfy { store.note(id: $0.id) == nil }, "the rest are gone")
     }

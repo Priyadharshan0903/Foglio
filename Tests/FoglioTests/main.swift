@@ -21,6 +21,7 @@ MainActor.assumeIsolated { selectionTests() }
 MainActor.assumeIsolated { folderExportTests() }
 MainActor.assumeIsolated { tasksTests() }
 MainActor.assumeIsolated { laneTests() }
+MainActor.assumeIsolated { trashTests() }
 MainActor.assumeIsolated { exportTests() }
 
 Check.finish()
