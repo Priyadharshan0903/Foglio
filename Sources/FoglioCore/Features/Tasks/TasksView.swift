@@ -20,6 +20,17 @@ struct TasksView: View {
     @State private var laneEdit: LaneEdit?
     @FocusState private var laneFieldFocused: Bool
 
+    /// Whether the naming field has actually taken focus yet.
+    ///
+    /// A `@FocusState` set before its field exists doesn't stick: it bounces
+    /// straight back to false and the window hands first responder to the
+    /// search box instead. The field therefore claims focus itself once it is
+    /// really in the responder chain, and the click-away cancel below only
+    /// counts after focus has genuinely arrived — otherwise that opening
+    /// bounce read as "clicked away" and threw the edit away before anything
+    /// could be typed into it.
+    @State private var laneFieldTookFocus = false
+
     /// The task row currently open for editing — see `TaskEdit`.
     @State private var taskEdit: TaskEdit?
     @FocusState private var taskField: TaskField?
@@ -136,7 +147,6 @@ struct TasksView: View {
         Button {
             commitTaskEdit()
             laneEdit = LaneEdit(lane: nil, text: "")
-            laneFieldFocused = true
         } label: {
             HStack(spacing: 5) {
                 IconView(icon: .capture, size: 11, lineWidth: 1.9)
@@ -310,7 +320,6 @@ struct TasksView: View {
             Button("Rename…") {
                 commitTaskEdit()
                 laneEdit = LaneEdit(lane: lane, text: lane.rawValue)
-                laneFieldFocused = true
             }
             // Keyboard- and trackpad-free way to do what the drag does; also
             // the only way to reorder when a column is scrolled off-screen.
@@ -348,18 +357,27 @@ struct TasksView: View {
         .font(Typo.sans(12.5))
         .foregroundStyle(theme.text)
         .focused($laneFieldFocused)
-        // Focus is taken here rather than where the edit starts: the field
-        // doesn't exist yet at that point, so a `@FocusState` set from the
-        // menu would land on nothing.
-        .onAppear { laneFieldFocused = true }
+        // Focus is claimed here rather than where the edit starts — the field
+        // doesn't exist at that point — and on the tick *after* this pass,
+        // because on the pass that first draws it the field isn't in the
+        // responder chain yet and the request is dropped on the floor.
+        .onAppear {
+            laneFieldTookFocus = false
+            Task { @MainActor in laneFieldFocused = true }
+        }
         .onSubmit { commitLaneEdit() }
         // Escape abandons the name. Without this it falls through to the
         // window, which reads Escape as "close" — a heavy answer to a typo.
         .onExitCommand { cancelLaneEdit() }
         // Clicking away is a cancel, not a commit: a half-typed name
-        // shouldn't become a column because focus moved.
+        // shouldn't become a column because focus moved. Only once the field
+        // has held focus, though — see `laneFieldTookFocus`.
         .onChange(of: laneFieldFocused) { _, focused in
-            if !focused { laneEdit = nil }
+            if focused {
+                laneFieldTookFocus = true
+            } else if laneFieldTookFocus {
+                laneEdit = nil
+            }
         }
         .padding(.horizontal, 9).padding(.vertical, 7)
         .background(theme.field)
