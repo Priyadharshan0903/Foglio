@@ -1,6 +1,7 @@
 @testable import FoglioCore
 
 designTokenTests()
+MainActor.assumeIsolated { themeTests() }
 dockingTests()
 iconAlignmentTests()
 markdownTests()
