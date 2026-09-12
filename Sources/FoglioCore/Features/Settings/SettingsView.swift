@@ -153,12 +153,7 @@ struct SettingsView: View {
 
     private var appearanceGroup: some View {
         group("Appearance & placement") {
-            settingRow("Appearance", hint: "Light for daytime, dark after hours") {
-                segmented(
-                    options: [("Light", ThemeMode.light), ("Dark", ThemeMode.dark)],
-                    selection: state.themeMode
-                ) { state.themeMode = $0 }
-            }
+            themeRow
             settingRow("Bar edge", hint: "Or just drag the strip — it docks to the nearest edge") {
                 segmented(
                     options: BarEdge.allCases.map { ($0.label, $0) },
@@ -166,6 +161,99 @@ struct SettingsView: View {
                 ) { state.barEdge = $0 }
             }
         }
+    }
+
+    // MARK: - Theme picker
+
+    /// The palettes, as swatches rather than a segmented control: a theme is
+    /// something you pick by looking at it, and eight names in a row would say
+    /// nothing about what any of them does to the screen.
+    private var themeRow: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Theme")
+                    .font(Typo.sans(13, .medium))
+                    .foregroundStyle(theme.text)
+                Text("Light for daytime, dark after hours — \(ThemeMode.allCases.count) to choose from")
+                    .font(Typo.sans(11.5))
+                    .foregroundStyle(theme.muted)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            themeShelf("Light", ThemeMode.lightModes)
+            themeShelf("Dark", ThemeMode.darkModes)
+        }
+        .padding(.vertical, 14)
+        .overlay(alignment: .bottom) { Rectangle().fill(theme.lineSoft).frame(height: 1) }
+    }
+
+    private func themeShelf(_ title: String, _ modes: [ThemeMode]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title.uppercased())
+                .font(Typo.sans(9.5))
+                .kerning(1.4)
+                .foregroundStyle(theme.muted)
+
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4),
+                spacing: 10
+            ) {
+                ForEach(modes) { themeSwatch($0) }
+            }
+        }
+    }
+
+    private func themeSwatch(_ mode: ThemeMode) -> some View {
+        let palette = mode.theme
+        let selected = state.themeMode == mode
+
+        return Button { state.themeMode = mode } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                // A miniature of the window: ground, a card on it, an accent.
+                ZStack {
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(palette.bg)
+
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 5) {
+                            Circle().fill(palette.accent).frame(width: 7, height: 7)
+                            bar(palette.text, width: 20)
+                        }
+                        bar(palette.muted, width: 34)
+                        bar(palette.muted, width: 26)
+                    }
+                    .padding(8)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(
+                        RoundedRectangle(cornerRadius: 5, style: .continuous)
+                            .fill(palette.surface)
+                    )
+                    .padding(7)
+                }
+                .frame(height: 64)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .strokeBorder(
+                            selected ? theme.accent : theme.line,
+                            lineWidth: selected ? 2 : 1
+                        )
+                )
+
+                Text(mode.label)
+                    .font(Typo.sans(11, selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? theme.text : theme.muted)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+            }
+        }
+        .buttonStyle(.flat)
+    }
+
+    /// One line of pretend text in a swatch.
+    private func bar(_ color: Color, width: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 1.5, style: .continuous)
+            .fill(color)
+            .frame(width: width, height: 3)
     }
 
     private var workGroup: some View {

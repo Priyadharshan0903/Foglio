@@ -48,7 +48,7 @@ struct EventDetailSheet: View {
         .frame(width: 480)
         .background(theme.bg)
         .environment(\.theme, theme)
-        .preferredColorScheme(state.themeMode == .dark ? .dark : .light)
+        .preferredColorScheme(state.theme.isDark ? .dark : .light)
     }
 
     private var header: some View {
