@@ -73,12 +73,6 @@ enum BarEdge: String, CaseIterable, Identifiable {
     }
 }
 
-enum ThemeMode: String {
-    case light, dark
-
-    var theme: Theme { self == .dark ? .dark : .light }
-}
-
 @Observable
 final class AppState {
     var section: Section = .notes
@@ -154,7 +148,9 @@ final class AppState {
 
     func dismissMeeting(_ id: String) { dismissedMeetings.insert(id) }
 
-    var themeMode: ThemeMode = .light { didSet { defaults.set(themeMode.rawValue, forKey: "theme") } }
+    /// Night Moss until someone picks otherwise — a bar that floats over your
+    /// desktop all day should start out of the way, not glowing white.
+    var themeMode: ThemeMode = .dark { didSet { defaults.set(themeMode.rawValue, forKey: "theme") } }
     var barEdge: BarEdge = .left { didSet { defaults.set(barEdge.rawValue, forKey: "barEdge") } }
     /// Where along that edge it sits, as a fraction (0 = top/left end).
     var barOffset: Double = 0.5 { didSet { defaults.set(barOffset, forKey: "barOffset") } }

@@ -36,7 +36,7 @@ struct MainWindowView: View {
         // the header down below an empty strip.
         .ignoresSafeArea(.container, edges: .top)
         .environment(\.theme, theme)
-        .preferredColorScheme(state.themeMode == .dark ? .dark : .light)
+        .preferredColorScheme(state.theme.isDark ? .dark : .light)
         .onChange(of: state.searchFocusRequests) { _, _ in searchFocused = true }
     }
 
