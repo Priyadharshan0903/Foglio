@@ -170,6 +170,47 @@ func themeTests() {
                 contrast(t.onAccent, t.accent) >= 4.5,
                 "\(mode.label) button labels read on the accent (\(ratio(t.onAccent, t.accent)))"
             )
+            // `ok` is not just a checkbox fill — it letters COMPLETED TODAY at
+            // 11pt (TasksView.swift:592), so it has to carry small text.
+            Check.expect(
+                contrast(t.ok, t.surface) >= 4.5,
+                "\(mode.label) done-colour carries a heading (\(ratio(t.ok, t.surface)))"
+            )
+            // Slate Amber's own clay sits at 3.75, so that is the floor.
+            Check.expect(
+                contrast(t.clay, t.surface) >= 3.7,
+                "\(mode.label) warning ink stays legible (\(ratio(t.clay, t.surface)))"
+            )
+        }
+    }
+
+    Check.suite("Themes — semantic colours belong to their palette") {
+        for mode in ThemeMode.allCases {
+            let t = mode.theme
+
+            // On a dark ground a saturated hue that answers to nothing else on
+            // screen reads as a foreign colour — a mint COMPLETED TODAY in a
+            // navy room. Night Moss avoided that by making done-ness its own
+            // accent; every dark palette now follows it.
+            if t.isDark {
+                Check.expect(
+                    t.ok == t.accent,
+                    "\(mode.label) takes its done-colour from its accent"
+                )
+            } else {
+                // The light palettes use the complement instead, but only as
+                // dark low-chroma ink, which is why it doesn't shout.
+                Check.expect(
+                    brightness(t.ok) < 0.55 && saturation(t.ok) < 0.6,
+                    "\(mode.label) done-colour stays tinted ink, not a colour"
+                )
+            }
+
+            // Warnings are warm in every palette, original two included.
+            Check.expect(
+                (10...45).contains(hueDegrees(t.clay)),
+                "\(mode.label) warning ink is warm (\(hueDegrees(t.clay))°)"
+            )
         }
     }
 
@@ -183,6 +224,8 @@ func themeTests() {
         Check.equal(Theme.light.invText, Color(hex: 0xF1F2F3), "light inverted card ink")
         Check.equal(Theme.dark.line, Color(hex: 0xE8E9E6, alpha: 0.10), "dark hairline")
         Check.equal(Theme.dark.invMuted, Color(hex: 0x5B615E), "dark inverted card muted ink")
+        Check.equal(Theme.dark.ok, Color(hex: 0x8FB98A), "dark done-colour is still the moss")
+        Check.equal(Theme.light.ok, Color(hex: 0x3E7C74), "light done-colour is still the teal")
         Check.equal(
             Theme.dark.shadowWin,
             ShadowSpec(color: .black.opacity(0.65), radius: 38, y: 32),
@@ -203,12 +246,119 @@ private func luminance(_ color: Color) -> Double {
         + 0.0722 * channel(rgb.blueComponent)
 }
 
-private func contrast(_ a: Color, _ b: Color) -> Double {
-    let (l1, l2) = (luminance(a), luminance(b))
+/// Contrast of `fg` painted on `bg`.
+///
+/// `fg` is composited first: several tokens are translucent — the light
+/// palettes' `invMuted` is the ground at 60% over the ink — and reading their
+/// components raw would score a colour that never reaches the screen.
+private func contrast(_ fg: Color, _ bg: Color) -> Double {
+    let (l1, l2) = (luminance(composite(fg, over: bg)), luminance(bg))
     let (hi, lo) = l1 > l2 ? (l1, l2) : (l2, l1)
     return (hi + 0.05) / (lo + 0.05)
 }
 
+private func composite(_ fg: Color, over bg: Color) -> Color {
+    guard let f = NSColor(fg).usingColorSpace(.sRGB),
+          let b = NSColor(bg).usingColorSpace(.sRGB) else { return fg }
+    let a = f.alphaComponent
+    guard a < 1 else { return fg }
+    return Color(
+        .sRGB,
+        red: Double(f.redComponent * a + b.redComponent * (1 - a)),
+        green: Double(f.greenComponent * a + b.greenComponent * (1 - a)),
+        blue: Double(f.blueComponent * a + b.blueComponent * (1 - a)),
+        opacity: 1
+    )
+}
+
 private func ratio(_ a: Color, _ b: Color) -> String {
     String(format: "%.1f:1", contrast(a, b))
+}
+
+/// Hue in degrees, and the two HSB components used to tell tinted ink from a
+/// colour that shouts.
+private func hueDegrees(_ color: Color) -> Int {
+    guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return 0 }
+    return Int((rgb.hueComponent * 360).rounded())
+}
+
+private func saturation(_ color: Color) -> Double {
+    guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return 0 }
+    return Double(rgb.saturationComponent)
+}
+
+private func brightness(_ color: Color) -> Double {
+    guard let rgb = NSColor(color).usingColorSpace(.sRGB) else { return 0 }
+    return Double(rgb.brightnessComponent)
+}
+
+/// Every foreground/background pair the app actually paints text in, held to
+/// the standard the design's own two palettes set.
+///
+/// The bar is relative rather than a flat WCAG number on purpose: Slate Amber
+/// letters an active rail icon at 3.35:1 and a muted field at 3.43:1, and this
+/// suite is not the place to relitigate the shipped design. What it does catch
+/// is a new palette being *worse* than that anywhere — which is how Midnight
+/// shipped a mint COMPLETED TODAY in a navy room.
+func themeSurfaceTests() {
+    // Each pair is (what it is, ink, ground). Sources are the call sites.
+    let pairs: [(String, KeyPath<Theme, Color>, KeyPath<Theme, Color>)] = [
+        ("body text on the ground", \.text, \.bg),
+        ("text on a card", \.text, \.surface),
+        ("text on a raised card", \.text, \.raised),
+        ("muted meta on a card", \.muted, \.surface),
+        ("muted text in a field", \.muted, \.field),
+        ("muted on a raised card", \.muted, \.raised),
+        // BarView.swift:79, MainWindowView.swift:151
+        ("an active rail icon", \.accentDeep, \.bg),
+        // NoteEditor.swift:212, CalendarView.swift:178
+        ("an accented link or meta", \.accentDeep, \.surface),
+        ("a button label", \.onAccent, \.accent),
+        // TasksView.swift:592
+        ("COMPLETED TODAY", \.ok, \.surface),
+        // TasksView.swift:551 — the tick inside a checked box
+        ("a task's tick", \.bg, \.ok),
+        // TrashView.swift:92, MeetingAlertView.swift:19
+        ("warning ink", \.clay, \.surface),
+        // BarView.swift:90 — the meeting count on its capsule
+        ("the bar's meeting badge", \.raised, \.clay),
+        // NotesView.swift:502
+        ("the notes selection tick", \.surface, \.accentDeep),
+        // SettingsView.swift:353-367 — the inverted Shortcuts card
+        ("the shortcuts card", \.invText, \.invBg),
+        ("the shortcuts card's muted rows", \.invMuted, \.invBg),
+        // BlockView.swift:221 — syntax in a code block
+        ("a code comment", \.muted, \.codeBg),
+        ("a code string", \.ok, \.codeBg),
+        ("a code number", \.clay, \.codeBg),
+        ("a code keyword", \.accentDeep, \.codeBg),
+        ("code identifiers", \.text, \.codeBg),
+    ]
+
+    Check.suite("Themes — every surface the app paints text on") {
+        for (what, ink, ground) in pairs {
+            // What the design itself settles for in this spot.
+            let floor = min(
+                contrast(Theme.light[keyPath: ink], Theme.light[keyPath: ground]),
+                contrast(Theme.dark[keyPath: ink], Theme.dark[keyPath: ground])
+            )
+            let worst = ThemeMode.allCases.min {
+                contrast($0.theme[keyPath: ink], $0.theme[keyPath: ground])
+                    < contrast($1.theme[keyPath: ink], $1.theme[keyPath: ground])
+            }!
+            let got = contrast(worst.theme[keyPath: ink], worst.theme[keyPath: ground])
+
+            // Clear WCAG AA, or — where the design itself doesn't — at least
+            // don't fall below what it settles for. A palette is not required
+            // to beat pure-white-on-near-black in absolute terms: Paper's
+            // cream ground reads at 13:1 rather than 15:1 and is perfectly
+            // legible. What it may not do is get worse in the thin spots.
+            let bar = min(floor, 4.5)
+            Check.expect(
+                got >= bar - 0.1,
+                "\(what): weakest is \(worst.label) at \(String(format: "%.2f", got)):1 "
+                    + "(needs \(String(format: "%.2f", bar)):1, design sets \(String(format: "%.2f", floor)):1)"
+            )
+        }
+    }
 }

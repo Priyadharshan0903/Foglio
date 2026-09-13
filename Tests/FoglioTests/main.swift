@@ -2,6 +2,7 @@
 
 designTokenTests()
 MainActor.assumeIsolated { themeTests() }
+MainActor.assumeIsolated { themeSurfaceTests() }
 dockingTests()
 iconAlignmentTests()
 markdownTests()
