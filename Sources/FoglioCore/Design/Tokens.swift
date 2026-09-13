@@ -81,7 +81,7 @@ extension Theme {
         accent: UInt32,
         onAccent: UInt32,
         accentDeep: UInt32,
-        ok: UInt32,
+        ok: UInt32? = nil,
         clay: UInt32,
         invMuted: UInt32? = nil
     ) -> Theme {
@@ -102,7 +102,11 @@ extension Theme {
             onAccent: Color(hex: onAccent),
             accentDeep: Color(hex: accentDeep),
             accentSoft: Color(hex: accent, alpha: 0.16),
-            ok: Color(hex: ok),
+            // The done-colour defaults to the accent, which is the rule Night
+            // Moss already followed. A palette only names its own when it wants
+            // the complement instead — as the light ones do, where a dark
+            // low-chroma green reads as tinted ink rather than as a colour.
+            ok: Color(hex: ok ?? accent),
             clay: Color(hex: clay),
             // The inverted card is the palette turned over: the ink becomes the
             // ground and the ground becomes the ink.
@@ -136,9 +140,9 @@ extension Theme {
         isDark: false,
         desk: 0xDBD3C3, bg: 0xF3EDE1, surface: 0xFBF7EF, raised: 0xFFFDF8,
         field: 0xEFE8DA, codeBg: 0xEDE5D5,
-        text: 0x2A2520, muted: 0x8A8071,
+        text: 0x2A2520, muted: 0x7E7465,
         accent: 0xB05423, onAccent: 0xFBF7EF, accentDeep: 0x8C3F18,
-        ok: 0x5E7A4F, clay: 0xA8763C
+        ok: 0x546E45, clay: 0x9E6D36
     )
 
     /// Harbor — cool blue-grey with a deep teal accent.
@@ -148,7 +152,7 @@ extension Theme {
         field: 0xEDF1F4, codeBg: 0xE6ECF0,
         text: 0x17242E, muted: 0x6B7E8B,
         accent: 0x2E7D8F, onAccent: 0xFFFFFF, accentDeep: 0x1C5D6C,
-        ok: 0x3E7C74, clay: 0xB5643C
+        ok: 0x3A736C, clay: 0xB5643C
     )
 
     /// Blossom — a soft warm white carrying a plum accent.
@@ -158,7 +162,7 @@ extension Theme {
         field: 0xF5EFF2, codeBg: 0xF2EAEE,
         text: 0x241B21, muted: 0x8A7A83,
         accent: 0xA8446B, onAccent: 0xFFFFFF, accentDeep: 0x82304F,
-        ok: 0x4E7A63, clay: 0xB26A4A
+        ok: 0x49735D, clay: 0xB26A4A
     )
 
     // MARK: - Dark palettes
@@ -170,7 +174,7 @@ extension Theme {
         field: 0x14171A, codeBg: 0x101314,
         text: 0xE8E9E6, muted: 0x8A928F,
         accent: 0x8FB98A, onAccent: 0x14171A, accentDeep: 0xA6CBA1,
-        ok: 0x8FB98A, clay: 0xD08A64,
+        clay: 0xD08A64,
         invMuted: 0x5B615E
     )
 
@@ -181,7 +185,7 @@ extension Theme {
         field: 0x111726, codeBg: 0x0D1220,
         text: 0xE3E8F2, muted: 0x8792A8,
         accent: 0x8CA8F0, onAccent: 0x111726, accentDeep: 0xADC1F7,
-        ok: 0x6FC4A8, clay: 0xE09A6B,
+        clay: 0xE09A6B,
         invMuted: 0x5A6172
     )
 
@@ -192,7 +196,7 @@ extension Theme {
         field: 0x1A1512, codeBg: 0x140F0C,
         text: 0xEDE4DA, muted: 0x9A8B7C,
         accent: 0xE3A857, onAccent: 0x1A1512, accentDeep: 0xF0C07C,
-        ok: 0x8FB98A, clay: 0xD08A64,
+        clay: 0xD08A64,
         invMuted: 0x6A5E53
     )
 
@@ -203,7 +207,7 @@ extension Theme {
         field: 0x121212, codeBg: 0x0D0D0D,
         text: 0xEDEDED, muted: 0x8E8E8E,
         accent: 0x63C8D8, onAccent: 0x121212, accentDeep: 0x8CDDE9,
-        ok: 0x7FC98A, clay: 0xD79A6A,
+        clay: 0xD79A6A,
         invMuted: 0x5E5E5E
     )
 }
