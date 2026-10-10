@@ -4,6 +4,23 @@ import Foundation
 /// (Day Log.dc.html:646-711) so a fresh install looks like the mockup rather
 /// than an empty shell.
 enum Seed {
+    static var welcome: Note {
+        Note(title: "Welcome to Foglio", body: """
+        A little space to think, write, and get things done.
+
+        ## Make yourself at home
+        Write freely in Notes. Use Text style for headings, or Lists for bullets, numbers, and checklists.
+
+        ## Keep lists moving
+        Press Return to add the next item. Press Return on an empty item to finish the list.
+
+        ## One thing at a time
+        Add a task in Tasks and check it off when you're done. You can find it again under Completed.
+
+        Your notes and tasks are saved automatically on this Mac.
+        """, folder: .scratch)
+    }
+
     private static func today(_ hour: Int, _ minute: Int) -> Date {
         Calendar.current.date(
             bySettingHour: hour, minute: minute, second: 0, of: Date()

@@ -7,7 +7,11 @@ dockingTests()
 iconAlignmentTests()
 markdownTests()
 notesTests()
-editorPlaceholderTests()
+MainActor.assumeIsolated { continuousEditorTests() }
+MainActor.assumeIsolated { richEditorTests() }
+MainActor.assumeIsolated { taskWorkflowTests() }
+MainActor.assumeIsolated { taskEditorTests() }
+MainActor.assumeIsolated { attachmentTests() }
 sourceModeTests()
 weekTests()
 icsTests()
@@ -21,9 +25,12 @@ MainActor.assumeIsolated { renameTests() }
 MainActor.assumeIsolated { folderTests() }
 MainActor.assumeIsolated { selectionTests() }
 MainActor.assumeIsolated { folderExportTests() }
+taskListQueryTests()
+MainActor.assumeIsolated { noteTypingSaveTests() }
 MainActor.assumeIsolated { tasksTests() }
 MainActor.assumeIsolated { laneTests() }
 MainActor.assumeIsolated { trashTests() }
 MainActor.assumeIsolated { exportTests() }
 
+MainActor.assumeIsolated { renderPreviewsIfRequested() }
 Check.finish()

@@ -532,9 +532,7 @@ struct CalendarView: View {
             folder: .scratch
         )
         store.upsert(note)
-        state.section = .notes
-        state.activeNoteId = note.id
-        state.activeBlock = 1
+        state.openNote(note, startWriting: true)
     }
 
     /// `selTaskAction` (:937).

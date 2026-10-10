@@ -58,7 +58,18 @@ struct MainWindowView: View {
 
             Spacer(minLength: 12)
 
-            searchField
+            if [.notes, .tasks, .capture, .trash].contains(state.section) {
+                searchField
+            } else {
+                Button {
+                    state.section = .notes
+                    state.searchFocusRequests += 1
+                } label: {
+                    Label("Search notes", systemImage: "magnifyingglass")
+                        .font(Typo.sans(12)).foregroundStyle(theme.muted)
+                }
+                .buttonStyle(.flat)
+            }
         }
         .padding(.horizontal, 15)
         .frame(height: Self.headerHeight)
@@ -69,7 +80,7 @@ struct MainWindowView: View {
         HStack(spacing: 7) {
             magnifier
 
-            TextField("Search notes, tasks, log…", text: $state.search)
+            TextField(searchPlaceholder, text: $state.search)
                 .textFieldStyle(.plain)
                 .font(Typo.sans(12.5))
                 .foregroundStyle(theme.text)
@@ -116,7 +127,17 @@ struct MainWindowView: View {
             cursorPushed = inside
             if inside { NSCursor.iBeam.push() } else { NSCursor.pop() }
         }
-        .help("Search notes, tasks and the log (⌘K)")
+        .help("Search this section (⌘F)")
+    }
+
+    private var searchPlaceholder: String {
+        switch state.section {
+        case .notes: "Search notes…"
+        case .tasks: "Search tasks…"
+        case .capture: "Search today's activity…"
+        case .trash: "Search deleted notes…"
+        default: "Search notes…"
+        }
     }
 
     private var magnifier: some View {
@@ -142,29 +163,43 @@ struct MainWindowView: View {
 
     private var rail: some View {
         VStack(spacing: 6) {
-            ForEach(Section.railItems) { item in
-                let isActive = state.section == item
-                Button {
-                    state.section = item
-                } label: {
-                    IconView(icon: item.icon)
-                        .foregroundStyle(isActive ? theme.accentDeep : theme.muted)
-                        .frame(width: 34, height: 34)
-                        .background(
-                            RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                .fill(isActive ? theme.accentSoft : .clear)
-                        )
-                        .hoverHighlight(theme, active: !isActive)
-                }
-                .buttonStyle(.flat)
-                .help(item.label)
+            ForEach(Section.primaryItems) { item in navigationRow(item) }
+            Divider().overlay(theme.line).padding(.vertical, 10)
+            DisclosureGroup("More") {
+                ForEach(Section.moreItems) { item in navigationRow(item) }
             }
+            .disclosureGroupStyle(SidebarDisclosureStyle(theme: theme))
+            .font(Typo.sans(11.5)).foregroundStyle(theme.muted)
             Spacer()
+            ForEach(Section.utilityItems) { item in navigationRow(item) }
         }
-        .padding(.vertical, 12)
-        .frame(width: 52)
+        .padding(.horizontal, 10).padding(.vertical, 16)
+        .frame(width: 140)
         .frame(maxHeight: .infinity)
         .background(theme.surface)
+    }
+
+    private func navigationRow(_ item: Section) -> some View {
+        let active = state.section == item
+        return Button {
+            state.search = ""
+            state.endNoteSelection()
+            state.section = item
+        } label: {
+            HStack(spacing: 9) {
+                IconView(icon: item.icon, size: 16)
+                Text(item.label).font(Typo.sans(12, active ? .semibold : .regular)).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(active ? theme.accentDeep : theme.muted)
+            .padding(.horizontal, 9).padding(.vertical, 10)
+            .background(active ? theme.accentSoft : .clear)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .hoverHighlight(theme, active: !active)
+        }
+        .buttonStyle(.flat)
+        .accessibilityLabel(item.label)
+        .accessibilityAddTraits(active ? .isSelected : [])
     }
 
     // MARK: - Content
@@ -196,6 +231,33 @@ struct MainWindowView: View {
         case .trash:
             TrashView(state: state, store: store)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+}
+
+/// The arrow, text, and empty space form one keyboard-accessible control.
+struct SidebarDisclosureStyle: DisclosureGroupStyle {
+    let theme: Theme
+
+    func makeBody(configuration: Configuration) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Button { configuration.isExpanded.toggle() } label: {
+                HStack(spacing: 9) {
+                    Image(systemName: configuration.isExpanded ? "chevron.down" : "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .frame(width: 16)
+                    configuration.label
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(theme.muted)
+                .padding(.horizontal, 9).padding(.vertical, 10)
+                .contentShape(Rectangle())
+                .hoverHighlight(theme)
+            }
+            .buttonStyle(.flat)
+            .accessibilityValue(configuration.isExpanded ? "Expanded" : "Collapsed")
+            .help(configuration.isExpanded ? "Hide more sections" : "Show more sections")
+            if configuration.isExpanded { configuration.content }
         }
     }
 }

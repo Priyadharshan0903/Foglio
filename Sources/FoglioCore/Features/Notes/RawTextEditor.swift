@@ -69,7 +69,7 @@ struct RawTextEditor: NSViewRepresentable {
         // Take focus as soon as the editor appears.
         DispatchQueue.main.async {
             view.window?.makeFirstResponder(view)
-            let caret = caretAtEnd ? view.string.count : 0
+            let caret = caretAtEnd ? view.string.utf16.count : 0
             view.setSelectedRange(NSRange(location: caret, length: 0))
         }
         return view

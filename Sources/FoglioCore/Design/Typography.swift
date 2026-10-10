@@ -100,7 +100,7 @@ enum Typo {
     /// `CTFont` is toll-free bridged to `NSFont`, so this is the same descriptor
     /// construction as `instance(of:)`, just cast to the AppKit type.
     static func sansNSFont(_ size: CGFloat, _ weight: Font.Weight = .regular) -> NSFont {
-        guard let sansFamily else { return .systemFont(ofSize: size) }
+        guard let sansFamily else { return .systemFont(ofSize: size, weight: nativeWeight(weight)) }
         let descriptor = CTFontDescriptorCreateWithAttributes([
             kCTFontFamilyNameAttribute: sansFamily,
             kCTFontVariationAttribute: [weightAxis: axisValue(weight) as CFNumber] as CFDictionary,
@@ -110,7 +110,7 @@ enum Typo {
 
     /// The `NSFont` equivalent of `mono(_:_:)`, for the source editor.
     static func monoNSFont(_ size: CGFloat, _ weight: Font.Weight = .regular) -> NSFont {
-        guard let monoFamily else { return .monospacedSystemFont(ofSize: size, weight: .regular) }
+        guard let monoFamily else { return .monospacedSystemFont(ofSize: size, weight: nativeWeight(weight)) }
         let descriptor = CTFontDescriptorCreateWithAttributes([
             kCTFontFamilyNameAttribute: monoFamily,
             kCTFontVariationAttribute: [weightAxis: axisValue(weight) as CFNumber] as CFDictionary,
@@ -126,6 +126,16 @@ enum Typo {
         case .medium: 500
         case .light, .thin, .ultraLight: 300
         default: 400
+        }
+    }
+
+    private static func nativeWeight(_ weight: Font.Weight) -> NSFont.Weight {
+        switch weight {
+        case .bold, .heavy, .black: .bold
+        case .semibold: .semibold
+        case .medium: .medium
+        case .light, .thin, .ultraLight: .light
+        default: .regular
         }
     }
 }

@@ -37,7 +37,7 @@ enum MainMenu {
         // MARK: File
         let fileItem = NSMenuItem()
         let fileMenu = NSMenu(title: "File")
-        fileMenu.addItem(action(title: "New Note", key: "n", modifiers: [.command, .shift], handler: onNewNote))
+        fileMenu.addItem(action(title: "New Note", key: "n", modifiers: .command, handler: onNewNote))
         fileMenu.addItem(action(title: "Quick Capture", key: " ", modifiers: [.command, .shift], handler: onQuickCapture))
         fileMenu.addItem(.separator())
         let close = NSMenuItem(title: "Close Window", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
@@ -58,7 +58,13 @@ enum MainMenu {
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editMenu.addItem(.separator())
-        editMenu.addItem(action(title: "Find…", key: "k", modifiers: .command, handler: onSearch))
+        editMenu.addItem(action(title: "Find…", key: "f", modifiers: .command, handler: onSearch))
+        editMenu.addItem(action(title: "Insert Link…", key: "k", modifiers: .command) {
+            if let editor = NSApp.keyWindow?.firstResponder as? NoteTextView {
+                if ![.codeBlock, .literal].contains(editor.currentStyle) { editor.onLinkRequest?() }
+            }
+            else { onSearch() }
+        })
         editItem.submenu = editMenu
         main.addItem(editItem)
 

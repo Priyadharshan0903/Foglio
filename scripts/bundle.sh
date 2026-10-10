@@ -4,17 +4,24 @@
 set -euo pipefail
 
 CONFIG="${1:-debug}"
+SWIFT_BUILD=(swift build)
+# Some restricted macOS runners cannot create SwiftPM's nested sandbox.
+# Opt in for those environments; ordinary local builds retain the default.
+if [ "${FOGLIO_DISABLE_SWIFT_SANDBOX:-0}" = "1" ]; then
+  SWIFT_BUILD+=(--disable-sandbox)
+fi
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 # Just the app product. Building everything drags in the FoglioTests target,
 # whose `@testable import` fails under -c release, where testability is off.
-swift build -c "$CONFIG" --product Foglio
+"${SWIFT_BUILD[@]}" -c "$CONFIG" --product Foglio
 
-BIN="$(swift build -c "$CONFIG" --show-bin-path)"
+BIN="$("${SWIFT_BUILD[@]}" -c "$CONFIG" --show-bin-path)"
 APP="$ROOT/build/Foglio.app"
 
-rm -rf "$APP"
+# Refresh the known contents in place. macOS can protect signed application
+# directories from removal even when their files are writable.
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$BIN/Foglio" "$APP/Contents/MacOS/Foglio"
@@ -47,8 +54,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleIconFile</key>          <string>Foglio</string>
   <key>CFBundleIdentifier</key>        <string>com.priyadharshan.foglio</string>
   <key>CFBundlePackageType</key>       <string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key>           <string>1</string>
+  <key>CFBundleShortVersionString</key><string>0.3.2</string>
+  <key>CFBundleVersion</key>           <string>7</string>
   <key>LSMinimumSystemVersion</key>    <string>14.0</string>
   <key>NSHighResolutionCapable</key>   <true/>
   <key>ATSApplicationFontsPath</key>   <string>Fonts</string>

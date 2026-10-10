@@ -170,6 +170,7 @@ struct Note: Identifiable, Equatable, Codable {
 
         for line in body.split(separator: "\n", omittingEmptySubsequences: false) {
             if line.hasPrefix("```") { insideFence.toggle(); continue }
+            if line.hasPrefix("~~~") { insideFence.toggle(); continue }
             if insideFence || line.isEmpty { continue }
 
             // Todo: "- [ ] text" / "- [x] text"
@@ -199,8 +200,18 @@ struct Note: Identifiable, Equatable, Codable {
     }
 
     private func strip(_ text: String) -> String {
-        text.replacingOccurrences(of: "[[", with: "")
+        var result = text.replacingOccurrences(of: "[[", with: "")
             .replacingOccurrences(of: "]]", with: "")
+        for (pattern, replacement) in [
+            (#"\[([^\]]+)\]\([^)]+\)"#, "$1"),
+            (#"(\*\*|__)(.*?)\1"#, "$2"),
+            (#"(?<![\w*])([*_])(.+?)\1(?![\w*])"#, "$2"),
+            (#"~~(.*?)~~"#, "$1"),
+            (#"<u>(.*?)</u>"#, "$1"),
+            (#"\x60([^\x60]+)\x60"#, "$1"),
+            (#"^> "#, ""),
+        ] { result = result.replacingOccurrences(of: pattern, with: replacement, options: .regularExpression) }
+        return result
     }
 
     /// Case-insensitive without lowercasing (and so reallocating) the whole body
@@ -220,6 +231,7 @@ struct TaskItem: Identifiable, Equatable, Codable {
     var done: Bool = false
     var completedAt: Date?
     var createdAt: Date = Clock.now()
+    var workflow: TaskWorkflow?
 }
 
 struct LogEntry: Identifiable, Equatable, Codable {
