@@ -18,23 +18,33 @@ cd "$ROOT"
 APP="$ROOT/build/Foglio.app"
 VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 DMG="$ROOT/build/Foglio-$VERSION.dmg"
-STAGE="$ROOT/build/dmg"
+STAGE="$(mktemp -d "$ROOT/build/.foglio-dmg.XXXXXX")"
+cleanup() { rm -rf "$STAGE" 2>/dev/null || true; }
+trap cleanup EXIT
 
-rm -rf "$STAGE" "$DMG"
-mkdir -p "$STAGE"
-
-cp -R "$APP" "$STAGE/Foglio.app"
-ln -s "$HOME/Applications" "$STAGE/Applications"
+codesign --verify --deep --strict "$APP"
+CONTENTS="$STAGE/contents"
+mkdir -p "$CONTENTS"
+ditto "$APP" "$CONTENTS/Foglio.app"
+ln -s "$HOME/Applications" "$CONTENTS/Applications"
 
 # UDZO is compressed and read-only, which is what a distributable image should
 # be — and what makes the copy out of it atomic from the Finder's side.
-hdiutil create \
+if ! hdiutil create \
   -volname "Foglio $VERSION" \
-  -srcfolder "$STAGE" \
+  -srcfolder "$CONTENTS" \
   -ov -format UDZO \
-  "$DMG" >/dev/null
+  "$DMG" >/dev/null; then
+  # Some build environments cannot attach the temporary device used by create.
+  # Generate the HFS+ filesystem in a file, then compress it without mounting.
+  echo "trying HFS+ image packaging…"
+  hdiutil makehybrid -hfs -hfs-volume-name "Foglio $VERSION" \
+    -o "$STAGE/Foglio-hybrid.dmg" "$CONTENTS" >/dev/null
+  hdiutil convert "$STAGE/Foglio-hybrid.dmg" -format UDZO -ov \
+    -o "$DMG" >/dev/null
+fi
 
-rm -rf "$STAGE"
+hdiutil verify "$DMG" >/dev/null
 
 echo "built $DMG"
 du -sh "$DMG" | awk '{print "size: " $1}'
