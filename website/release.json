@@ -1,0 +1,7 @@
+{
+  "version": "0.3.3",
+  "minimumMacOS": "14",
+  "architecture": "Apple silicon",
+  "filename": "Foglio-0.3.3.dmg",
+  "channel": "Preview"
+}

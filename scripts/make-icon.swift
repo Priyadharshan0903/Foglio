@@ -1,22 +1,13 @@
 #!/usr/bin/env swift
 import AppKit
 
-// Generates build/Foglio.icns.
-//
-// The mark is the design's own "Margin" candidate (Name and Icon.dc.html:92) —
-// a ruled margin line with notes beside it, tagged "notes-first" — which fits
-// this app better than the previous "Daylog" sheet-and-tick mark once Notes
-// became the main surface. It's drawn here rather than committed as a binary
-// so it stays reviewable and regenerable, the same reasoning as the in-app
-// icons.
-//
-// Colours and geometry are copied verbatim from the design's candidate list:
-// paper ground, ink strokes, amber dot marking where the margin line and the
-// middle note line meet.
+// Generates an iconset and PNG-backed ICNS file. The user selected "Refined
+// Margin" from design/icon-concepts/comparison.png: warm ivory, charcoal ink,
+// and one amber dot. Geometry matches that concept within a macOS icon inset.
 
-let paper = NSColor(srgbRed: 0xF7 / 255, green: 0xF8 / 255, blue: 0xF8 / 255, alpha: 1)
-let ink = NSColor(srgbRed: 0x1A / 255, green: 0x1E / 255, blue: 0x22 / 255, alpha: 1)
-let amber = NSColor(srgbRed: 0xE0 / 255, green: 0x9A / 255, blue: 0x2B / 255, alpha: 1)
+let paper = NSColor(srgbRed: 0xF3 / 255, green: 0xEB / 255, blue: 0xDD / 255, alpha: 1)
+let ink = NSColor(srgbRed: 0x29 / 255, green: 0x25 / 255, blue: 0x1F / 255, alpha: 1)
+let amber = NSColor(srgbRed: 0xDE / 255, green: 0xA9 / 255, blue: 0x58 / 255, alpha: 1)
 
 /// Draws the mark in a 96x96 space, top-left origin (SVG convention).
 func draw(into cg: CGContext, pixels: CGFloat) {
@@ -26,30 +17,26 @@ func draw(into cg: CGContext, pixels: CGFloat) {
 
     // Ground: a rounded square inset from the canvas, as macOS icons are.
     let plate = CGRect(x: 7, y: 7, width: 82, height: 82)
-    let rounded = CGPath(roundedRect: plate, cornerWidth: 20, cornerHeight: 20, transform: nil)
+    let rounded = CGPath(roundedRect: plate, cornerWidth: 18.5, cornerHeight: 18.5, transform: nil)
     cg.addPath(rounded)
     cg.setFillColor(paper.cgColor)
     cg.fillPath()
 
-    // The design uses a thicker stroke (7 vs. 5 units) once it's rendered
-    // small — at a uniform scale the four thin strokes thin out to under a
-    // pixel by 16x16 and the mark disappears.
-    cg.setLineWidth(pixels <= 32 ? 7 : 5)
+    // Optical compensation keeps the thin rule legible in menu/Finder sizes.
+    cg.setLineWidth(pixels <= 32 ? 4.5 : 3.1)
     cg.setLineCap(.round)
     cg.setLineJoin(.round)
     cg.setStrokeColor(ink.cgColor)
 
-    // The margin rule, and three note lines beside it — "M36 20v56 M48 34h28
-    // M48 48h28 M48 62h18" (Name and Icon.dc.html:93).
-    cg.move(to: CGPoint(x: 36, y: 20)); cg.addLine(to: CGPoint(x: 36, y: 76))
-    cg.move(to: CGPoint(x: 48, y: 34)); cg.addLine(to: CGPoint(x: 76, y: 34))
-    cg.move(to: CGPoint(x: 48, y: 48)); cg.addLine(to: CGPoint(x: 76, y: 48))
-    cg.move(to: CGPoint(x: 48, y: 62)); cg.addLine(to: CGPoint(x: 66, y: 62))
+    cg.move(to: CGPoint(x: 32.8, y: 26.3)); cg.addLine(to: CGPoint(x: 32.8, y: 69.7))
+    cg.move(to: CGPoint(x: 44.2, y: 34.7)); cg.addLine(to: CGPoint(x: 64.7, y: 34.7))
+    cg.move(to: CGPoint(x: 44.2, y: 48)); cg.addLine(to: CGPoint(x: 64.7, y: 48))
+    cg.move(to: CGPoint(x: 44.2, y: 61.3)); cg.addLine(to: CGPoint(x: 57.2, y: 61.3))
     cg.strokePath()
 
     // Where you are on the margin — the one accent, sitting on the rule line.
     cg.setFillColor(amber.cgColor)
-    cg.fillEllipse(in: CGRect(x: 30, y: 42, width: 12, height: 12))
+    cg.fillEllipse(in: CGRect(x: 27.15, y: 42.35, width: 11.3, height: 11.3))
 }
 
 func render(_ pixels: Int) -> Data? {
@@ -69,17 +56,24 @@ func render(_ pixels: Int) -> Data? {
 
 let root = URL(fileURLWithPath: FileManager.default.currentDirectoryPath)
 let iconset = root.appendingPathComponent("build/Foglio.iconset")
-try? FileManager.default.removeItem(at: iconset)
 try FileManager.default.createDirectory(at: iconset, withIntermediateDirectories: true)
 
-// The names iconutil expects.
-let variants: [(name: String, pixels: Int)] = [
-    ("icon_16x16", 16), ("icon_16x16@2x", 32),
-    ("icon_32x32", 32), ("icon_32x32@2x", 64),
-    ("icon_128x128", 128), ("icon_128x128@2x", 256),
-    ("icon_256x256", 256), ("icon_256x256@2x", 512),
-    ("icon_512x512", 512), ("icon_512x512@2x", 1024),
+// Modern ICNS representations accept PNG payloads, including Retina sizes.
+// Writing the container directly avoids iconutil's system conversion service,
+// which is unavailable in some restricted macOS build environments.
+let variants: [(name: String, pixels: Int, element: String)] = [
+    ("icon_16x16", 16, "icp4"), ("icon_16x16@2x", 32, "ic11"),
+    ("icon_32x32", 32, "icp5"), ("icon_32x32@2x", 64, "ic12"),
+    ("icon_128x128", 128, "ic07"), ("icon_128x128@2x", 256, "ic13"),
+    ("icon_256x256", 256, "ic08"), ("icon_256x256@2x", 512, "ic14"),
+    ("icon_512x512", 512, "ic09"), ("icon_512x512@2x", 1024, "ic10"),
 ]
+
+func bigEndianLength(_ length: Int) -> Data {
+    var value = UInt32(length).bigEndian
+    return withUnsafeBytes(of: &value) { Data($0) }
+}
+var elements = Data()
 
 for variant in variants {
     guard let png = render(variant.pixels) else {
@@ -87,6 +81,18 @@ for variant in variants {
         exit(1)
     }
     try png.write(to: iconset.appendingPathComponent("\(variant.name).png"))
+    elements.append(Data(variant.element.utf8))
+    elements.append(bigEndianLength(png.count + 8))
+    elements.append(png)
 }
 
-print("wrote \(variants.count) sizes to \(iconset.path)")
+var icns = Data("icns".utf8)
+icns.append(bigEndianLength(elements.count + 8))
+icns.append(elements)
+let destination = root.appendingPathComponent("build/Foglio.icns")
+try icns.write(to: destination)
+// Require native decoding before the bundle picks up the generated resource.
+guard let decoded = NSImage(contentsOf: destination), decoded.isValid else {
+    throw NSError(domain: "Foglio.Icon", code: 1, userInfo: [NSLocalizedDescriptionKey: "macOS could not decode the generated ICNS."])
+}
+print("wrote \(variants.count) sizes and \(destination.path)")

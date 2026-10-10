@@ -33,4 +33,5 @@ MainActor.assumeIsolated { trashTests() }
 MainActor.assumeIsolated { exportTests() }
 
 MainActor.assumeIsolated { renderPreviewsIfRequested() }
+MainActor.assumeIsolated { renderLandingAssetsIfRequested() }
 Check.finish()
