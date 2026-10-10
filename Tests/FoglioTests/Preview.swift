@@ -95,11 +95,11 @@ func renderPreviewsIfRequested() {
     render("tasks-list", content: MainWindowView(state: state, store: store, calendar: calendar))
     state.taskLayout = .board
     for mode in [ThemeMode.harbor, .dark] {
-        render("task-editor-" + mode.rawValue, width: 680, height: 620,
+        render("task-editor-" + mode.rawValue, width: 1080, height: 800,
                content: TaskDetailEditor(task: TaskItem(label: "Review the new designs", lane: store.defaultLane, meta: RichEditorPreview.sample, workflow: .inProgress),
                                          isNew: false, store: store, theme: mode.theme, autoLog: false, onClose: {}, onDelete: {}))
     }
-    render("task-editor-validation", width: 680, height: 620,
+    render("task-editor-validation", width: 1080, height: 800,
            content: TaskDetailEditor(task: TaskItem(lane: store.defaultLane), isNew: false, store: store, theme: .harbor, autoLog: false, onClose: {}, onDelete: {}))
     for mode in ThemeMode.allCases {
         render("rich-editor-" + mode.rawValue, width: 680, height: 640,

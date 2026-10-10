@@ -25,8 +25,7 @@ enum TaskListQuery {
         return tasks.filter { task in
             (status == .all || task.done == (status == .completed))
                 && (list == nil || task.lane == list)
-                && (query.isEmpty || task.label.localizedCaseInsensitiveContains(query)
-                    || task.meta.localizedCaseInsensitiveContains(query))
+                && task.matches(query)
         }.sorted { lhs, rhs in
             if lhs.done != rhs.done { return !lhs.done }
             let left = lhs.done ? (lhs.completedAt ?? lhs.createdAt) : lhs.createdAt

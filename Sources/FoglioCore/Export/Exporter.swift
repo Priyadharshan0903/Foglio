@@ -16,6 +16,7 @@ struct Archive: Codable, Equatable {
     /// lanes were user-made carry only the lane named on each task.
     var lanes: [Lane]?
     var tasks: [TaskItem] = []
+    var taskWorkspace: TaskWorkspace?
     var attachments: [String: Data]?
     var log: [LogEntry] = []
     var milestones: [Milestone] = []
@@ -42,6 +43,7 @@ enum Exporter {
             folders: store.folders,
             lanes: store.lanes,
             tasks: store.tasks,
+            taskWorkspace: store.taskWorkspace,
             attachments: LibraryAttachments.snapshot(at: store.root),
             log: store.log,
             milestones: store.milestones
@@ -77,7 +79,7 @@ enum Exporter {
             )
         }
 
-        try tasksMarkdown(archive.tasks, lanes: archive.lanes).write(
+        try tasksMarkdown(archive.tasks, lanes: archive.lanes, statuses: archive.taskWorkspace?.statuses).write(
             to: root.appendingPathComponent("tasks.md"),
             atomically: true,
             encoding: .utf8
@@ -129,8 +131,21 @@ enum Exporter {
     /// the way the board reads left-to-right. Passing none — an archive from
     /// before lanes were user-made, or a caller that only has tasks — falls
     /// back to the order the lanes first appear in the tasks themselves.
-    static func tasksMarkdown(_ tasks: [TaskItem], lanes: [Lane]? = nil) -> String {
+    static func tasksMarkdown(_ tasks: [TaskItem], lanes: [Lane]? = nil, statuses: [TaskBoardStatus]? = nil) -> String {
         var out = ["# Tasks", ""]
+        func properties(_ task: TaskItem) -> [String] {
+            var fields: [String] = []
+            if task.taskPriority != .none { fields.append("Priority: " + task.taskPriority.label) }
+            if let project = task.project { fields.append("Project: " + project) }
+            if let assignee = task.assignee { fields.append("Assignee: " + assignee) }
+            if !(task.labels ?? []).isEmpty { fields.append("Labels: " + (task.labels ?? []).joined(separator: ", ")) }
+            if let due = task.dueDate { fields.append("Due: " + due.formatted(date: .abbreviated, time: .omitted)) }
+            if let estimate = task.estimate { fields.append("Estimate: \(estimate) points") }
+            func reference(_ id: UUID) -> String { tasks.first { $0.id == id }.map { $0.ticketID.isEmpty ? id.uuidString : $0.ticketID } ?? id.uuidString }
+            if let parent = task.parentID { fields.append("Parent: " + reference(parent)) }
+            if !(task.blockedBy ?? []).isEmpty { fields.append("Blocked by: " + (task.blockedBy ?? []).map(reference).joined(separator: ", ")) }
+            return fields.map { "  - " + $0 }
+        }
 
         for lane in lanes ?? laneOrder(in: tasks) {
             let open = tasks.filter { $0.lane == lane && !$0.done }
@@ -139,8 +154,10 @@ enum Exporter {
             for task in open {
                 let rich = task.meta.contains("\n") || task.meta.range(of: #"[*_\x60\[\]|]|^>"#, options: .regularExpression) != nil
                 let meta = task.meta.isEmpty || rich ? "" : " — _\(task.meta)_"
-                let status = [.backlog, .inProgress].contains(task.workflowStatus) ? " _(\(task.workflowStatus.label))_" : ""
-                out.append("- [ ] \(task.label)\(status)\(meta)")
+                let statusName = statuses?.first { $0.id == task.statusID }?.name ?? task.workflowStatus.label
+                let status = task.statusID != nil || [.backlog, .inProgress].contains(task.workflowStatus) ? " _(\(statusName))_" : ""
+                out.append("- [ ] \(task.ticketID.isEmpty ? "" : task.ticketID + " ")\(task.label)\(status)\(meta)")
+                out += properties(task)
                 if rich { out += task.meta.components(separatedBy: "\n").map { "  " + $0 } }
             }
             out.append("")
@@ -151,7 +168,8 @@ enum Exporter {
             out.append("## Done")
             for task in done {
                 let at = task.completedAt.map { " `\(Clock.hhmm($0))`" } ?? ""
-                out.append("- [x] \(task.label)\(at)")
+                out.append("- [x] \(task.ticketID.isEmpty ? "" : task.ticketID + " ")\(task.label)\(at)")
+                out += properties(task)
                 if !task.meta.isEmpty { out += task.meta.components(separatedBy: "\n").map { "  " + $0 } }
             }
             out.append("")

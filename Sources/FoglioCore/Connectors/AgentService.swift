@@ -86,22 +86,44 @@ final class AgentService {
             try beginWrite()
             guard let lane = store.addLane(named: name) else { throw ConnectorError("invalid_name", "Give the list a name.") }
             try finishWrite(); return ["id": .string(lane.id), "name": .string(lane.label)]
+        case "task_statuses": return ["statuses": .array(store.statuses.enumerated().map { statusJSON($0.element, position: $0.offset) })]
+        case "task_status_create":
+            let name = try nonempty(a, "name"), category = try workflowCategory(a["category"]!.string!)
+            try beginWrite()
+            let created: TaskBoardStatus
+            do { created = try store.addStatus(name: name, category: category) }
+            catch { throw ConnectorError("invalid_arguments", error.localizedDescription) }
+            try finishWrite(); return statusJSON(created, position: store.statuses.firstIndex(of: created)!)
+        case "task_status_update":
+            try checkRevision(a, AgentRevision.of(store.statuses))
+            guard a["name"] != nil || a["position"] != nil else { throw ConnectorError("invalid_arguments", "Supply a name or position.") }
+            let name = try a["name"].map { _ in try nonempty(a, "name") }
+            let id = a["id"]!.string!
+            try beginWrite()
+            do { try store.updateStatus(id: id, name: name, position: a["position"]?.number.map(Int.init)) }
+            catch { throw ConnectorError("invalid_arguments", error.localizedDescription) }
+            try finishWrite()
+            let index = store.statuses.firstIndex { $0.id == id }!
+            return statusJSON(store.statuses[index], position: index)
         case "tasks_list":
             let lane = try a["list"].map { try list($0.string!) }
             let status = try a["status"].map { try workflow($0.string!) }
             let query = a["query"]?.string ?? ""
             let tasks = store.tasks.filter { task in
-                (lane == nil || task.lane == lane) && (status == nil || task.workflowStatus == status)
-                && (query.isEmpty || task.label.localizedCaseInsensitiveContains(query) || task.meta.localizedCaseInsensitiveContains(query))
+                (lane == nil || task.lane == lane) && (status == nil || store.status(for: task).id == status?.id)
+                && task.matches(query)
+                && (a["project"] == nil || task.project?.caseInsensitiveCompare(a["project"]!.string!) == .orderedSame)
+                && (a["priority"] == nil || task.taskPriority.rawValue == Int(a["priority"]!.number!))
             }
             return page(tasks.map(taskJSON), key: "tasks", a)
         case "task_get": return try taskJSON(task(a))
         case "task_create":
             let title = try nonempty(a, "title")
             let lane = try a["list"].map { try list($0.string!) } ?? store.defaultLane
-            let status = try a["status"].map { try workflow($0.string!) } ?? .todo
-            let task = TaskItem(label: title, lane: lane, meta: a["description"]?.string ?? "")
-            try beginWrite(); store.addTask(task); store.setWorkflow(taskId: task.id, status: status, autoLog: autoLog())
+            let status = try a["status"].map { try workflow($0.string!) } ?? workflow("todo")
+            var task = TaskItem(label: title, lane: lane, meta: a["description"]?.string ?? "")
+            try applyProperties(a, to: &task)
+            try beginWrite(); store.addTask(task); store.setStatus(taskId: task.id, statusID: status.id, autoLog: autoLog())
             try finishWrite(); return taskJSON(store.tasks.first { $0.id == task.id }!)
         case "task_update", "task_move":
             let current = try task(a)
@@ -111,10 +133,15 @@ final class AgentService {
             let status = try a["status"].map { try workflow($0.string!) }
             let title = try a["title"].map { _ in try nonempty(a, "title") } ?? current.label
             guard a.keys.contains(where: { !["id", "revision"].contains($0) }) else { throw ConnectorError("invalid_arguments", "Supply a field to change.") }
+            var updated = current
+            if name == "task_update" {
+                updated.label = title; updated.meta = a["description"]?.string ?? current.meta
+                try applyProperties(a, to: &updated)
+            }
             try beginWrite()
-            if name == "task_update" { store.edit(taskId: current.id, label: title, meta: a["description"]?.string ?? current.meta) }
+            if name == "task_update" { store.update(updated) }
             if let lane { store.move(taskId: current.id, to: lane) }
-            if let status { store.setWorkflow(taskId: current.id, status: status, autoLog: autoLog()) }
+            if let status { store.setStatus(taskId: current.id, statusID: status.id, autoLog: autoLog()) }
             try finishWrite(); return taskJSON(store.tasks.first { $0.id == current.id }!)
         case "note_folders": return ["folders": .array(store.folders.map { folder in
             ["id": .string(folder.id), "name": .string(folder.label), "count": .number(Double(store.notes.filter { $0.folder == folder }.count))]
@@ -173,7 +200,7 @@ final class AgentService {
             }
             let task = TaskItem(label: try nonempty(a, "title"), lane: try a["list"].map { try list($0.string!) } ?? store.defaultLane,
                                 meta: "Follow-up from \(event.title)\n\(when) · \(event.calendarName)", sourceEventID: event.id)
-            try beginWrite(); store.addTask(task); try finishWrite(); return taskJSON(task)
+            try beginWrite(); store.addTask(task); try finishWrite(); return taskJSON(store.tasks.first { $0.id == task.id }!)
         default: throw ConnectorError("unknown_tool", "Unknown Foglio tool.")
         }
     }
@@ -196,7 +223,8 @@ final class AgentService {
         return value
     }
     private func task(_ a: [String: JSON]) throws -> TaskItem {
-        guard let id = UUID(uuidString: a["id"]?.string ?? ""), let task = store.tasks.first(where: { $0.id == id }) else { throw ConnectorError("not_found", "Task not found.") }; return task
+        let raw = a["id"]?.string ?? ""
+        guard let task = store.tasks.first(where: { $0.id.uuidString.caseInsensitiveCompare(raw) == .orderedSame || (!$0.ticketID.isEmpty && $0.ticketID.caseInsensitiveCompare(raw) == .orderedSame) }) else { throw ConnectorError("not_found", "Task not found.") }; return task
     }
     private func note(_ a: [String: JSON]) throws -> Note {
         guard let id = UUID(uuidString: a["id"]?.string ?? ""), let note = store.note(id: id) else { throw ConnectorError("not_found", "Note not found or is in Trash.") }; return note
@@ -207,8 +235,47 @@ final class AgentService {
     private func list(_ name: String) throws -> Lane {
         guard let value = store.lanes.first(where: { $0.id == name.lowercased() }) else { throw ConnectorError("not_found", "Task list not found. Use task_lists or task_list_create first.") }; return value
     }
-    private func workflow(_ raw: String) throws -> TaskWorkflow {
-        guard let value = TaskWorkflow(rawValue: raw == "in_progress" ? "inProgress" : raw) else { throw ConnectorError("invalid_status", "Invalid board status.") }; return value
+    private func workflow(_ raw: String) throws -> TaskBoardStatus {
+        let id = raw == "inProgress" ? "in_progress" : raw
+        guard let value = store.statuses.first(where: { $0.id == id }) else { throw ConnectorError("invalid_status", "Unknown status. Call task_statuses first.") }
+        return value
+    }
+    private func workflowCategory(_ raw: String) throws -> TaskWorkflow {
+        guard let value = TaskWorkflow(rawValue: raw == "in_progress" ? "inProgress" : raw) else { throw ConnectorError("invalid_status", "Invalid category.") }
+        return value
+    }
+    private func statusJSON(_ status: TaskBoardStatus, position: Int) -> JSON {
+        ["id": .string(status.id), "name": .string(status.name),
+         "category": .string(status.category == .inProgress ? "in_progress" : status.category.rawValue),
+         "position": .number(Double(position)), "revision": .string(AgentRevision.of(store.statuses))]
+    }
+    private func applyProperties(_ a: [String: JSON], to task: inout TaskItem) throws {
+        if let p = a["priority"]?.number { task.priority = TaskPriority(rawValue: Int(p)) }
+        for key in ["project", "assignee"] {
+            if let raw = a[key]?.string {
+                let text = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard text.rangeOfCharacter(from: .newlines) == nil else { throw ConnectorError("invalid_arguments", "\(key) must be a single-line value.") }
+                if key == "project" { task.project = text.isEmpty ? nil : text }
+                else { task.assignee = text.isEmpty ? nil : text }
+            }
+        }
+        if let items = a["labels"]?.array {
+            var seen = Set<String>(), labels: [String] = []
+            for item in items {
+                let label = try nonempty(["label": item], "label")
+                if seen.insert(label.lowercased()).inserted { labels.append(label) }
+            }
+            task.labels = labels
+        }
+        if let raw = a["due_date"]?.string { task.dueDate = raw.isEmpty ? nil : try AgentRevision.parse(raw) }
+        if let value = a["estimate"]?.number { task.estimate = value == 0 ? nil : Int(value) }
+        if let parent = a["parent_id"]?.string { task.parentID = parent.isEmpty ? nil : try self.task(["id": .string(parent)]).id }
+        if let items = a["blocked_by"]?.array {
+            var seen = Set<UUID>()
+            task.blockedBy = try items.map { try self.task(["id": $0]).id }.filter { seen.insert($0).inserted }
+        }
+        do { try TaskRelations.validate(task, among: store.tasks) }
+        catch { throw ConnectorError("invalid_relation", error.localizedDescription) }
     }
     private func checkRevision(_ a: [String: JSON], _ revision: String) throws {
         guard a["revision"]?.string == revision else { throw ConnectorError("conflict", "This item changed after it was read. Get it again and apply your edit to the current content.") }
@@ -221,7 +288,17 @@ final class AgentService {
     }
     private func taskJSON(_ task: TaskItem) -> JSON {
         ["id": .string(task.id.uuidString), "title": .string(task.label), "description": .string(task.meta),
-         "list": .string(task.lane.id), "status": .string(task.workflowStatus == .inProgress ? "in_progress" : task.workflowStatus.rawValue),
+         "ticket_id": .string(task.ticketID), "list": .string(task.lane.id), "status": .string(store.status(for: task).id),
+         "status_name": .string(store.status(for: task).name),
+         "priority": .number(Double(task.taskPriority.rawValue)), "priority_name": .string(task.taskPriority.label),
+         "project": task.project.map(JSON.string) ?? .null, "assignee": task.assignee.map(JSON.string) ?? .null,
+         "labels": .array((task.labels ?? []).map(JSON.string)),
+         "due_date": task.dueDate.map { .string(AgentRevision.date($0)) } ?? .null,
+         "estimate": task.estimate.map { .number(Double($0)) } ?? .null,
+         "parent_id": task.parentID.map { .string($0.uuidString) } ?? .null,
+         "blocked_by": .array((task.blockedBy ?? []).map { .string($0.uuidString) }),
+         "subtask_ids": .array(store.tasks.filter { $0.parentID == task.id }.map { .string($0.id.uuidString) }),
+         "is_blocked": .bool(store.tasks.contains { (task.blockedBy ?? []).contains($0.id) && !$0.done }),
          "created_at": .string(AgentRevision.date(task.createdAt)), "completed_at": task.completedAt.map { .string(AgentRevision.date($0)) } ?? .null,
          "event_id": task.sourceEventID.map(JSON.string) ?? .null,
          "revision": .string(AgentRevision.of(task))]

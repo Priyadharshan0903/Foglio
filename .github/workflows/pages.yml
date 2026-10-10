@@ -1,0 +1,97 @@
+# Builds Foglio from main, packages the DMG, builds the website around that
+# exact DMG, and publishes it to GitHub Pages. Runs once per push to main (and
+# on demand); nothing runs again until main changes.
+#
+# The app is ad-hoc signed, not Developer ID signed or notarized. That is
+# enough to test the pipeline end to end; macOS will warn on first open.
+name: Deploy website
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deployment at a time; a newer push supersedes a queued older one.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  app:
+    name: Build app and DMG
+    runs-on: macos-15
+    outputs:
+      filename: ${{ steps.dmg.outputs.filename }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: swift --version
+
+      - name: Build DMG
+        env:
+          FOGLIO_DMG_APPLICATIONS_LINK: /Applications
+        run: ./scripts/dmg.sh release
+
+      - name: Check version matches the website
+        id: dmg
+        run: |
+          app_version="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' build/Foglio.app/Contents/Info.plist)"
+          site_version="$(node -p "require('./website/release.json').version")"
+          if [ "$app_version" != "$site_version" ]; then
+            echo "::error::App is $app_version but website/release.json says $site_version. Update one to match."
+            exit 1
+          fi
+          echo "filename=Foglio-$app_version.dmg" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dmg
+          path: build/${{ steps.dmg.outputs.filename }}
+          if-no-files-found: error
+          retention-days: 7
+
+  website:
+    name: Build website
+    needs: app
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Only the DMG from the job above goes into build/, so the site can
+      # never pick up a stale image.
+      - uses: actions/download-artifact@v4
+        with:
+          name: dmg
+          path: build
+
+      - name: Build site
+        working-directory: website
+        run: npm run build
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: website/dist
+
+  deploy:
+    name: Deploy to GitHub Pages
+    needs: website
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

@@ -10,10 +10,18 @@ struct TasksView: View {
     @FocusState private var laneFieldFocused: Bool
     @State private var pendingLaneDeletion: Lane?
     @State private var deletedTask: TaskItem?
-    @State private var dropTarget: TaskWorkflow?
+    @State private var dropTarget: String?
+    @State private var managingStatuses = false
+    @State private var selectedProject: String?
+    @State private var selectedPriority: TaskPriority?
+    @State private var sort: TaskSort = .newest
+    private var projects: [String] { Array(Set(store.tasks.compactMap(\.project).filter { !$0.isEmpty })).sorted() }
     private var theme: Theme { state.theme }
+    private var scopedTasks: [TaskItem] {
+        store.tasks.filter { (selectedProject == nil || $0.project == selectedProject) && (selectedPriority == nil || $0.taskPriority == selectedPriority) }
+    }
     private var visible: [TaskItem] {
-        TaskListQuery.filtered(store.tasks, status: status, list: selectedList, search: state.search)
+        sort.ordered(TaskListQuery.filtered(scopedTasks, status: status, list: selectedList, search: state.search))
     }
 
     var body: some View {
@@ -37,6 +45,7 @@ struct TasksView: View {
         .onChange(of: store.lanes) { _, lanes in
             if let selectedList, !lanes.contains(selectedList) { self.selectedList = nil }
         }
+        .sheet(isPresented: $managingStatuses) { TaskStatusManager(store: store, theme: theme) }
         .sheet(item: $taskEdit) { presentation in
             TaskDetailEditor(task: presentation.task, isNew: presentation.isNew, store: store,
                              theme: theme, autoLog: state.autoLog,
@@ -63,7 +72,7 @@ struct TasksView: View {
                     .font(Typo.sans(12)).foregroundStyle(theme.muted)
             }
             Spacer()
-            Button { create(in: .todo) } label: {
+            Button { create(in: store.statuses.first { $0.id == "todo" }!) } label: {
                 Label("New task", systemImage: "plus")
                     .font(Typo.sans(12, .semibold)).foregroundStyle(theme.onAccent)
                     .padding(.horizontal, 12).padding(.vertical, 8)
@@ -80,8 +89,22 @@ struct TasksView: View {
                 layoutButton(.list, symbol: "list.bullet", label: "List")
             }.padding(3).background(theme.field).clipShape(RoundedRectangle(cornerRadius: 7))
             TaskStatusFilter(selection: $status,
-                             counts: TaskListQuery.counts(store.tasks, list: selectedList, search: state.search), theme: theme)
+                             counts: TaskListQuery.counts(scopedTasks, list: selectedList, search: state.search), theme: theme)
             Spacer(minLength: 0)
+            Menu {
+                Button("All projects") { selectedProject = nil }
+                ForEach(projects, id: \.self) { project in Button(project) { selectedProject = project } }
+            } label: { Text(selectedProject ?? "Project").font(Typo.sans(12)).foregroundStyle(theme.muted).lineLimit(1).frame(maxWidth: 140) }
+                .menuStyle(.borderlessButton).fixedSize()
+            Menu {
+                Button("Any priority") { selectedPriority = nil }
+                ForEach(TaskPriority.allCases) { priority in Button(priority.label) { selectedPriority = priority } }
+            } label: { Text(selectedPriority?.label ?? "Priority").font(Typo.sans(12)).foregroundStyle(theme.muted) }
+                .menuStyle(.borderlessButton).fixedSize()
+            Menu {
+                ForEach(TaskSort.allCases) { order in Button(order.label) { sort = order } }
+            } label: { Image(systemName: "arrow.up.arrow.down").foregroundStyle(theme.muted) }
+                .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Sort: " + sort.label)
             Menu {
                 Button("All lists") { selectedList = nil }
                 Divider()
@@ -91,6 +114,8 @@ struct TasksView: View {
                     .font(Typo.sans(12)).foregroundStyle(theme.muted)
             }.menuStyle(.borderlessButton).fixedSize()
             Menu {
+                Button("Manage statuses…") { managingStatuses = true }
+                Divider()
                 Button("New list…") { laneEdit = LaneEdit(lane: nil, text: "") }
                 if let selectedList {
                     Button("Rename list…") { laneEdit = LaneEdit(lane: selectedList, text: selectedList.rawValue) }
@@ -117,10 +142,11 @@ struct TasksView: View {
 
     private var board: some View {
         GeometryReader { geometry in
-            let width = max(232, (geometry.size.width - 84) / 4)
+            let count = CGFloat(store.statuses.count)
+            let width = max(300, (geometry.size.width - 48 - 16 * (count - 1)) / count)
             ScrollView(.horizontal) {
-                HStack(alignment: .top, spacing: 12) {
-                    ForEach(TaskWorkflow.allCases) { workflow in
+                HStack(alignment: .top, spacing: 16) {
+                    ForEach(store.statuses) { workflow in
                         column(workflow, width: width, height: geometry.size.height - 32)
                     }
                 }.padding(.horizontal, 24).padding(.vertical, 16)
@@ -128,14 +154,18 @@ struct TasksView: View {
         }
     }
 
-    private func column(_ workflow: TaskWorkflow, width: CGFloat, height: CGFloat) -> some View {
-        let tasks = visible.filter { $0.workflowStatus == workflow }
+    private func column(_ workflow: TaskBoardStatus, width: CGFloat, height: CGFloat) -> some View {
+        let tasks = visible.filter { store.status(for: $0).id == workflow.id }
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 7) {
                 statusIcon(workflow)
-                Text(workflow.label).font(Typo.sans(12.5, .semibold)).foregroundStyle(theme.text)
+                Text(workflow.label).font(Typo.sans(12.5, .semibold)).foregroundStyle(theme.text).lineLimit(1).help(workflow.name)
                 Text("\(tasks.count)").font(Typo.sans(11)).foregroundStyle(theme.muted)
                 Spacer(minLength: 0)
+                Menu {
+                    Button("Manage statuses…") { managingStatuses = true }
+                } label: { Image(systemName: "ellipsis").foregroundStyle(theme.muted) }
+                    .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Rename or reorder statuses")
                 Button { create(in: workflow) } label: {
                     Image(systemName: "plus").font(.system(size: 12)).foregroundStyle(theme.muted)
                         .frame(width: 26, height: 26).hoverHighlight(theme, cornerRadius: 5)
@@ -157,32 +187,75 @@ struct TasksView: View {
             }
         }
         .padding(8).frame(width: width, height: max(180, height), alignment: .topLeading)
-        .background(dropTarget == workflow ? theme.accentSoft : theme.field.opacity(0.5))
+        .background(dropTarget == workflow.id ? theme.accentSoft : theme.field.opacity(0.5))
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(dropTarget == workflow ? theme.accentDeep : .clear, lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(dropTarget == workflow.id ? theme.accentDeep : .clear, lineWidth: 1))
         .dropDestination(for: String.self) { items, _ in
             let ids = items.compactMap { value -> UUID? in
                 guard value.hasPrefix("foglio-task:") else { return nil }
                 return UUID(uuidString: String(value.dropFirst("foglio-task:".count)))
             }.filter { id in store.tasks.contains { $0.id == id } }
-            for id in ids { store.setWorkflow(taskId: id, status: workflow, autoLog: state.autoLog) }
+            for id in ids { store.setStatus(taskId: id, statusID: workflow.id, autoLog: state.autoLog) }
             return !ids.isEmpty
         } isTargeted: { targeted in
-            if targeted { dropTarget = workflow } else if dropTarget == workflow { dropTarget = nil }
+            if targeted { dropTarget = workflow.id } else if dropTarget == workflow.id { dropTarget = nil }
         }
     }
 
     private func card(_ task: TaskItem) -> some View {
         Button { taskEdit = TaskPresentation(task: task, isNew: false) } label: {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    Text(task.ticketID).font(Typo.mono(10.5)).foregroundStyle(theme.muted)
+                    Spacer()
+                    if task.taskPriority != .none {
+                        Label(task.taskPriority.label, systemImage: task.taskPriority.symbol)
+                            .font(Typo.sans(10.5)).foregroundStyle(theme.accentDeep)
+                    }
+                }
                 Text(task.label).font(Typo.sans(13, .medium)).foregroundStyle(task.done ? theme.muted : theme.text)
-                    .lineLimit(4).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                    .lineLimit(3).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                if !task.summary.isEmpty {
+                    Text(task.summary).font(Typo.sans(11.5)).foregroundStyle(theme.muted)
+                        .lineLimit(2).multilineTextAlignment(.leading)
+                }
+                if let project = task.project, !project.isEmpty {
+                    Label(project, systemImage: "square.stack").font(Typo.sans(10.5))
+                        .foregroundStyle(theme.muted).lineLimit(1)
+                }
                 HStack(spacing: 6) {
-                    statusIcon(task.workflowStatus)
+                    statusIcon(store.status(for: task))
                     Text(task.lane.label).font(Typo.sans(10.5)).foregroundStyle(theme.muted)
                         .padding(.horizontal, 6).padding(.vertical, 3).background(theme.field).clipShape(RoundedRectangle(cornerRadius: 4))
                     Spacer(minLength: 0)
-                    if !task.meta.isEmpty { Image(systemName: "text.alignleft").font(.system(size: 10)).foregroundStyle(theme.muted) }
+                    if let date = task.dueDate {
+                        Label(date.formatted(.dateTime.month(.abbreviated).day()), systemImage: "calendar")
+                            .font(Typo.sans(10.5)).foregroundStyle(!task.done && date < Calendar.current.startOfDay(for: Clock.now()) ? theme.clay : theme.muted)
+                    }
+                    if let estimate = task.estimate { Text("\(estimate) pts").font(Typo.sans(10.5)).foregroundStyle(theme.muted) }
+                }
+                let children = store.tasks.filter { $0.parentID == task.id }
+                let blockers = store.tasks.filter { (task.blockedBy ?? []).contains($0.id) && !$0.done }
+                if !children.isEmpty || !blockers.isEmpty {
+                    HStack(spacing: 12) {
+                        if !blockers.isEmpty {
+                            Label("Blocked · \(blockers.count)", systemImage: "link").foregroundStyle(theme.clay)
+                        }
+                        if !children.isEmpty {
+                            Label("\(children.filter(\.done).count)/\(children.count)", systemImage: "checklist").foregroundStyle(theme.muted)
+                        }
+                    }.font(Typo.sans(10.5))
+                }
+                if !(task.labels ?? []).isEmpty || task.assignee != nil {
+                    HStack(spacing: 6) {
+                        ForEach(Array((task.labels ?? []).prefix(2)), id: \.self) { label in
+                            Text(label).lineLimit(1).padding(.horizontal, 6).padding(.vertical, 3)
+                                .background(theme.accentSoft).clipShape(RoundedRectangle(cornerRadius: 4))
+                        }
+                        if (task.labels ?? []).count > 2 { Text("+\((task.labels ?? []).count - 2)") }
+                        Spacer(minLength: 0)
+                        if let assignee = task.assignee { Text(assignee).lineLimit(1) }
+                    }.font(Typo.sans(10)).foregroundStyle(theme.muted)
                 }
             }
             .padding(12).frame(maxWidth: .infinity, alignment: .leading)
@@ -199,8 +272,8 @@ struct TasksView: View {
     private var list: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
-                ForEach(TaskWorkflow.allCases) { workflow in
-                    let tasks = visible.filter { $0.workflowStatus == workflow }
+                ForEach(store.statuses) { workflow in
+                    let tasks = visible.filter { store.status(for: $0).id == workflow.id }
                     if !tasks.isEmpty {
                         HStack(spacing: 8) {
                             statusIcon(workflow)
@@ -210,8 +283,14 @@ struct TasksView: View {
                         ForEach(tasks) { task in
                             Button { taskEdit = TaskPresentation(task: task, isNew: false) } label: {
                                 HStack(spacing: 12) {
-                                    statusIcon(task.workflowStatus)
-                                    Text(task.label).font(Typo.sans(13)).foregroundStyle(task.done ? theme.muted : theme.text).lineLimit(1)
+                                    statusIcon(store.status(for: task))
+                                    Text(task.ticketID).font(Typo.mono(11)).foregroundStyle(theme.muted).frame(width: 72, alignment: .leading)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(task.label).font(Typo.sans(13)).foregroundStyle(task.done ? theme.muted : theme.text).lineLimit(2)
+                                        if let project = task.project { Text(project).font(Typo.sans(11)).foregroundStyle(theme.muted) }
+                                    }
+                                    if task.taskPriority != .none { Text(task.taskPriority.label).font(Typo.sans(11)).foregroundStyle(theme.accentDeep) }
+                                    if let date = task.dueDate { Text(date, format: .dateTime.month(.abbreviated).day()).font(Typo.sans(11)).foregroundStyle(theme.muted) }
                                     Spacer(minLength: 12)
                                     Text(task.lane.label).font(Typo.sans(11)).foregroundStyle(theme.muted)
                                     Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(theme.muted)
@@ -233,11 +312,17 @@ struct TasksView: View {
     @ViewBuilder private func taskActions(_ task: TaskItem) -> some View {
         Button("Open task…") { taskEdit = TaskPresentation(task: task, isNew: false) }
         Menu("Set status") {
-            ForEach(TaskWorkflow.allCases) { workflow in
-                Button(workflow.label) { store.setWorkflow(taskId: task.id, status: workflow, autoLog: state.autoLog) }
-                    .disabled(task.workflowStatus == workflow)
+            ForEach(store.statuses) { workflow in
+                Button(workflow.label) { store.setStatus(taskId: task.id, statusID: workflow.id, autoLog: state.autoLog) }
+                    .disabled(store.status(for: task).id == workflow.id)
             }
         }
+        Menu("Set priority") {
+            ForEach(TaskPriority.allCases) { priority in
+                Button(priority.label) { var updated = task; updated.priority = priority; store.update(updated) }
+            }
+        }
+        Button("Copy ticket ID") { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(task.ticketID, forType: .string) }
         Menu("Move to list") {
             ForEach(store.lanes) { lane in Button(lane.label) { store.move(taskId: task.id, to: lane) }.disabled(task.lane == lane) }
         }
@@ -245,13 +330,13 @@ struct TasksView: View {
         Button("Delete task", role: .destructive) { delete(task) }
     }
 
-    private func statusIcon(_ workflow: TaskWorkflow) -> some View {
+    private func statusIcon(_ workflow: TaskBoardStatus) -> some View {
         Image(systemName: workflow.symbol).font(.system(size: 12))
-            .foregroundStyle([.inProgress, .done].contains(workflow) ? theme.accentDeep : theme.muted)
+            .foregroundStyle([.inProgress, .done].contains(workflow.category) ? theme.accentDeep : theme.muted)
     }
-    private func create(in workflow: TaskWorkflow) {
+    private func create(in workflow: TaskBoardStatus) {
         taskEdit = TaskPresentation(task: TaskItem(lane: selectedList ?? store.defaultLane,
-                                                  done: workflow == .done, workflow: workflow), isNew: true)
+                                                  done: workflow.category == .done, workflow: workflow.category, statusID: workflow.id), isNew: true)
     }
     private func delete(_ task: TaskItem) {
         deletedTask = store.tasks.first { $0.id == task.id } ?? task

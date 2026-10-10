@@ -40,6 +40,8 @@ final class Store {
     /// the *order* of the columns exists nowhere else at all.
     private(set) var lanes: [Lane] = []
     private(set) var tasks: [TaskItem] = []
+    private(set) var taskWorkspace = TaskWorkspace()
+    var statuses: [TaskBoardStatus] { taskWorkspace.statuses }
     private(set) var log: [LogEntry] = []
     private(set) var milestones: [Milestone] = []
 
@@ -76,6 +78,7 @@ final class Store {
     private var trashDir: URL { root.appendingPathComponent("trash", isDirectory: true) }
     private var foldersURL: URL { root.appendingPathComponent("folders.json") }
     private var lanesURL: URL { root.appendingPathComponent("lanes.json") }
+    private var workspaceURL: URL { root.appendingPathComponent("task-workspace.json") }
     private var tasksURL: URL { root.appendingPathComponent("tasks.json") }
     private var logURL: URL { root.appendingPathComponent("log.json") }
     private var milestonesURL: URL { root.appendingPathComponent("milestones.json") }
@@ -98,6 +101,8 @@ final class Store {
         folders = decode([Folder].self, from: foldersURL) ?? [.scratch]
         lanes = decode([Lane].self, from: lanesURL) ?? [Lane("To do")]
         tasks = decode([TaskItem].self, from: tasksURL) ?? []
+        taskWorkspace = decode(TaskWorkspace.self, from: workspaceURL) ?? TaskWorkspace()
+        reconcileTaskWorkspace()
         log = decode([LogEntry].self, from: logURL) ?? []
         milestones = decode([Milestone].self, from: milestonesURL) ?? []
 
@@ -217,7 +222,8 @@ final class Store {
         return try? d.decode(type, from: data)
     }
 
-    private func write<T: Encodable>(_ value: T, to url: URL) {
+    @discardableResult
+    private func write<T: Encodable>(_ value: T, to url: URL) -> Bool {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601
         e.outputFormatting = [.prettyPrinted, .sortedKeys]
@@ -225,7 +231,8 @@ final class Store {
             let data = try e.encode(value)
             try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
             try data.write(to: url, options: .atomic)
-        } catch { persistenceError = error.localizedDescription }
+            return true
+        } catch { persistenceError = error.localizedDescription; return false }
     }
 
     // MARK: - Notes
@@ -644,6 +651,16 @@ final class Store {
     /// board never draws.
     func addTask(_ task: TaskItem) {
         var task = task
+        guard !tasks.contains(where: { $0.id == task.id }) else { return }
+        do { try TaskRelations.validate(task, among: tasks) } catch { persistenceError = error.localizedDescription; return }
+        if (task.ticketNumber ?? 0) <= 0 || tasks.contains(where: { $0.ticketNumber == task.ticketNumber }) {
+            guard taskWorkspace.lastTicketNumber < Int.max else { persistenceError = "Ticket numbers exhausted."; return }
+            taskWorkspace.lastTicketNumber += 1
+            task.ticketNumber = taskWorkspace.lastTicketNumber
+        } else { taskWorkspace.lastTicketNumber = max(taskWorkspace.lastTicketNumber, task.ticketNumber ?? 0) }
+        // Reserve the number before saving the task; a crash can skip a number,
+        // but can never give a previously issued number to another task.
+        guard write(taskWorkspace, to: workspaceURL) else { return }
         if !lanes.contains(task.lane) { task.lane = defaultLane }
         tasks.append(task)
         saveTasks()
@@ -651,7 +668,10 @@ final class Store {
 
     func update(_ task: TaskItem) {
         guard let i = tasks.firstIndex(where: { $0.id == task.id }) else { return }
-        tasks[i] = task
+        do { try TaskRelations.validate(task, among: tasks) } catch { persistenceError = error.localizedDescription; return }
+        var updated = task
+        updated.ticketNumber = tasks[i].ticketNumber
+        tasks[i] = updated
         saveTasks()
     }
 
@@ -671,6 +691,10 @@ final class Store {
 
     func deleteTask(id: UUID) {
         tasks.removeAll { $0.id == id }
+        for i in tasks.indices {
+            if tasks[i].parentID == id { tasks[i].parentID = nil }
+            tasks[i].blockedBy?.removeAll { $0 == id }
+        }
         saveTasks()
     }
 
@@ -689,10 +713,15 @@ final class Store {
     func setDone(taskId: UUID, done: Bool, autoLog: Bool) {
         guard let i = tasks.firstIndex(where: { $0.id == taskId }) else { return }
         let wasDone = tasks[i].done
+        let previousCategory = status(for: tasks[i]).category
         tasks[i].done = done
         tasks[i].completedAt = done ? (tasks[i].completedAt ?? Clock.now()) : nil
-        if done { tasks[i].workflow = .done }
-        else if tasks[i].workflow == .done { tasks[i].workflow = .todo }
+        if done {
+            if previousCategory != .done { tasks[i].statusID = "done" }
+            tasks[i].workflow = .done
+        } else if tasks[i].workflow == .done || status(for: tasks[i]).category == .done {
+            tasks[i].workflow = .todo; tasks[i].statusID = "todo"
+        }
         saveTasks()
         if done && !wasDone && autoLog {
             addLog(LogEntry(text: tasks[i].label, kind: .task))
@@ -700,15 +729,82 @@ final class Store {
     }
 
     func setWorkflow(taskId: UUID, status: TaskWorkflow, autoLog: Bool) {
-        guard let i = tasks.firstIndex(where: { $0.id == taskId }), tasks[i].workflowStatus != status else { return }
-        if status == .done {
-            setDone(taskId: taskId, done: true, autoLog: autoLog)
-        } else {
-            tasks[i].workflow = status
-            tasks[i].done = false
-            tasks[i].completedAt = nil
-            saveTasks()
+        let id = status == .inProgress ? "in_progress" : status.rawValue
+        setStatus(taskId: taskId, statusID: id, autoLog: autoLog)
+    }
+
+    func status(for task: TaskItem) -> TaskBoardStatus {
+        if let id = task.statusID, let status = statuses.first(where: { $0.id == id }),
+           (status.category == .done) == task.done { return status }
+        let category = task.workflowStatus
+        return statuses.first { $0.id == (category == .inProgress ? "in_progress" : category.rawValue) }
+            ?? TaskBoardStatus.starters.first { $0.category == category }!
+    }
+
+    func setStatus(taskId: UUID, statusID: String, autoLog: Bool) {
+        guard let i = tasks.firstIndex(where: { $0.id == taskId }),
+              let status = statuses.first(where: { $0.id == statusID }) else { return }
+        let wasDone = tasks[i].done
+        tasks[i].statusID = status.id
+        tasks[i].workflow = status.category
+        tasks[i].done = status.category == .done
+        tasks[i].completedAt = tasks[i].done ? (tasks[i].completedAt ?? Clock.now()) : nil
+        saveTasks()
+        if tasks[i].done && !wasDone && autoLog { addLog(LogEntry(text: tasks[i].label, kind: .task)) }
+    }
+
+    func addStatus(name: String, category: TaskWorkflow) throws -> TaskBoardStatus {
+        let name = try validStatusName(name)
+        guard statuses.count < 20 else { throw TaskWorkspaceError.tooManyStatuses }
+        let status = TaskBoardStatus(id: UUID().uuidString.lowercased(), name: name, category: category)
+        let index = statuses.lastIndex(where: { $0.category == category }).map { $0 + 1 } ?? statuses.count
+        taskWorkspace.statuses.insert(status, at: index)
+        write(taskWorkspace, to: workspaceURL)
+        return status
+    }
+
+    func updateStatus(id: String, name: String? = nil, position: Int? = nil) throws {
+        guard let index = statuses.firstIndex(where: { $0.id == id }) else { throw TaskWorkspaceError.missingStatus }
+        let name = try name.map { try validStatusName($0, excluding: id) }
+        if let position, !statuses.indices.contains(position) { throw TaskWorkspaceError.invalidPosition }
+        var status = statuses[index]
+        if let name { status.name = name }
+        taskWorkspace.statuses.remove(at: index)
+        taskWorkspace.statuses.insert(status, at: position ?? index)
+        write(taskWorkspace, to: workspaceURL)
+    }
+
+    private func validStatusName(_ name: String, excluding id: String? = nil) throws -> String {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty, name.count <= 80, name.rangeOfCharacter(from: .newlines) == nil else { throw TaskWorkspaceError.invalidName }
+        guard !statuses.contains(where: { $0.id != id && $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { throw TaskWorkspaceError.duplicateName }
+        return name
+    }
+
+    private func reconcileTaskWorkspace() {
+        // Always retain built-in identities for older clients and old task files.
+        for status in TaskBoardStatus.starters where !statuses.contains(where: { $0.id == status.id }) {
+            taskWorkspace.statuses.append(status)
         }
+        taskWorkspace.lastTicketNumber = max(taskWorkspace.lastTicketNumber, tasks.compactMap(\.ticketNumber).max() ?? 0)
+        var seen = Set<Int>()
+        let order = tasks.indices.sorted {
+            tasks[$0].createdAt == tasks[$1].createdAt ? tasks[$0].id.uuidString < tasks[$1].id.uuidString : tasks[$0].createdAt < tasks[$1].createdAt
+        }
+        for i in order {
+            if let number = tasks[i].ticketNumber, number > 0, seen.insert(number).inserted { continue }
+            guard taskWorkspace.lastTicketNumber < Int.max else { persistenceError = "Ticket numbers exhausted."; return }
+            taskWorkspace.lastTicketNumber += 1
+            tasks[i].ticketNumber = taskWorkspace.lastTicketNumber
+            seen.insert(taskWorkspace.lastTicketNumber)
+        }
+        // Recover a column if a task arrives without its workspace metadata.
+        for task in tasks {
+            if let id = task.statusID, !statuses.contains(where: { $0.id == id }) {
+                taskWorkspace.statuses.append(TaskBoardStatus(id: id, name: "Recovered \(String(id.prefix(8)))", category: task.workflowStatus))
+            }
+        }
+        if write(taskWorkspace, to: workspaceURL) { saveTasks() }
     }
 
     /// A todo block reads as "in tasks" when a task with the same label exists.
@@ -766,6 +862,10 @@ final class Store {
         notes = archive.notes
         trash = archive.trash ?? []
         tasks = archive.tasks
+        let highWater = taskWorkspace.lastTicketNumber
+        taskWorkspace = archive.taskWorkspace ?? TaskWorkspace()
+        taskWorkspace.lastTicketNumber = max(highWater, taskWorkspace.lastTicketNumber)
+        reconcileTaskWorkspace()
         if let attachments = archive.attachments { try? LibraryAttachments.restore(attachments, at: root) }
         log = archive.log
         milestones = archive.milestones

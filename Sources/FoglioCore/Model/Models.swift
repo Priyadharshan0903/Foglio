@@ -236,6 +236,32 @@ struct TaskItem: Identifiable, Equatable, Codable {
     var createdAt: Date = Clock.now()
     var workflow: TaskWorkflow?
     var sourceEventID: String?
+    /// Separate from the title and UUID. Allocated once by Store, never reused.
+    var ticketNumber: Int?
+    var statusID: String?
+    var priority: TaskPriority?
+    var project: String?
+    var assignee: String?
+    var labels: [String]?
+    var dueDate: Date?
+    var estimate: Int?
+    var parentID: UUID?
+    var blockedBy: [UUID]?
+    var ticketID: String { ticketNumber.map { "FOG-\($0)" } ?? "" }
+    var taskPriority: TaskPriority { priority ?? .none }
+    var summary: String { Note(body: meta).snippet }
+    func matches(_ query: String) -> Bool {
+        query.isEmpty || [label, meta, ticketID, project ?? "", assignee ?? ""]
+            .contains { $0.localizedCaseInsensitiveContains(query) }
+            || (labels ?? []).contains { $0.localizedCaseInsensitiveContains(query) }
+    }
+}
+
+enum TaskPriority: Int, Codable, CaseIterable, Identifiable {
+    case none = 0, urgent, high, normal, low
+    var id: Int { rawValue }
+    var label: String { ["No priority", "Urgent", "High", "Normal", "Low"][rawValue] }
+    var symbol: String { self == .urgent ? "exclamationmark.circle" : self == .none ? "minus" : "chart.bar" }
 }
 
 struct LogEntry: Identifiable, Equatable, Codable {

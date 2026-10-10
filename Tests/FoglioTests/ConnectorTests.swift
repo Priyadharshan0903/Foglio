@@ -15,7 +15,7 @@ func connectorProtocolTests() {
         Check.equal(initialized["result"]?["protocolVersion"], "2025-11-25", "negotiates the MCP version")
         Check.expect(initialized["result"]?["instructions"]?.string?.contains("revision") == true, "server instructions explain edit conflicts")
         Check.expect(mcp.handle(["jsonrpc": "2.0", "method": "notifications/initialized"]) == nil, "notifications produce no stdout response")
-        Check.equal(request("tools/list")["result"]?["tools"]?.array?.count, 23, "all connector tools are discoverable")
+        Check.equal(request("tools/list")["result"]?["tools"]?.array?.count, 26, "all connector tools are discoverable")
         Check.equal(request("tools/call", ["name": "foglio_status"])["result"]?["structuredContent"]?["connected"], true, "returns structured tool data")
         let missingRevision = request("tools/call", ["name": "note_update", "arguments": ["id": "x", "body": "text"]])
         Check.equal(missingRevision["result"]?["isError"], true, "missing edit revision is a tool error")
@@ -23,7 +23,7 @@ func connectorProtocolTests() {
         Check.equal(request("tools/call", ["name": "not_a_tool"])["error"]?["code"], -32602, "unknown tool is a protocol error")
         Check.equal(request("unknown")["error"]?["code"], -32601, "unknown method returns method-not-found")
         Check.equal(request("tools/call", ["name": "tasks_list", "arguments": ["limit": 0]])["result"]?["isError"], true, "pagination limits are validated")
-        Check.equal(request("tools/call", ["name": "task_create", "arguments": ["title": "A", "status": "invalid"]])["result"]?["isError"], true, "invalid workflow is rejected")
+        Check.equal(request("tools/call", ["name": "task_create", "arguments": ["title": "A", "status": 1]])["result"]?["isError"], true, "invalid workflow is rejected")
         Check.equal(request("tools/call", ["name": "note_create", "arguments": ["title": "A", "path": "/tmp/file"]])["result"]?["isError"], true, "tools cannot request arbitrary file paths")
         Check.equal(Set(ToolCatalog.tools.map(\.name)).count, ToolCatalog.tools.count, "tool names are unique")
         let offline = FoglioMCPServer { _, _ in throw ConnectorError("app_unavailable", "Open Foglio.") }
@@ -54,6 +54,14 @@ func connectorProtocolTests() {
             catch { Check.equal((error as? ConnectorError)?.code, "unsafe_socket", "does not replace a regular file") }
             Check.equal(try String(contentsOf: socket, encoding: .utf8), "keep", "file contents are untouched")
         } catch { Check.expect(false, "socket check failed: \(error.localizedDescription)") }
+    }
+
+    Check.suite("Connector — copied setup") {
+        let quoted = "'" + AgentConnectorSetup.executable.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        Check.equal(AgentConnectorSetup.codexCommand, "codex mcp add foglio -- " + quoted, "Codex command points at the helper")
+        Check.equal(AgentConnectorSetup.claudeCodeCommand, "claude mcp add --transport stdio --scope user foglio -- " + quoted,
+                    "Claude Code command registers the helper for every project")
+        Check.expect(AgentConnectorSetup.claudeConfiguration.contains(AgentConnectorSetup.executable), "Claude Desktop config points at the helper")
     }
 }
 
@@ -124,6 +132,41 @@ func connectorIntegrationTests() async {
         Check.equal(try await call("tasks_list", ["status": "in_progress", "list": "studio"])["total"], 1, "task filters match board status and list")
         let reloaded = Store(root: root); reloaded.load()
         Check.expect(reloaded.tasks.contains { $0.id.uuidString == id.string && $0.workflowStatus == .inProgress }, "task changes survive relaunch")
+
+        Check.suite("Agents — custom workflow, ticket IDs, and structured properties") {}
+        let custom = try await call("task_status_create", ["name": "Waiting", "category": "in_progress"])
+        let renamedStatus = try await call("task_status_update", ["id": custom["id"]!, "revision": custom["revision"]!, "name": "Review", "position": 0])
+        Check.equal(renamedStatus["id"], custom["id"], "renaming preserves the status ID")
+        await fails("task_status_update", ["id": custom["id"]!, "revision": custom["revision"]!, "name": "Stale rename"], code: "conflict")
+        let ticket = try await call("task_create", ["title": "Review release", "status": custom["id"]!, "priority": 2, "project": "Foglio", "labels": ["Release", "release", "UX"], "assignee": "Me", "estimate": 5, "due_date": "2026-10-12T09:00:00+05:30"])
+        Check.expect(ticket["ticket_id"]?.string?.hasPrefix("FOG-") == true, "tasks expose readable ticket IDs")
+        Check.equal(try await call("task_get", ["id": ticket["ticket_id"]!])["id"], ticket["id"], "ticket ID resolves the same task as its UUID")
+        Check.equal(ticket["status_name"], "Review", "custom names are exposed to agents")
+        Check.equal(ticket["labels"]?.array?.count, 2, "labels are deduplicated case-insensitively")
+        Check.equal(try await call("tasks_list", ["status": custom["id"]!, "priority": 2, "project": "Foglio"])["total"], 1, "custom status and properties can filter tasks")
+        let cleared = try await call("task_update", ["id": ticket["id"]!, "revision": ticket["revision"]!, "project": "", "labels": [], "due_date": "", "estimate": 0])
+        Check.equal(cleared["ticket_id"], ticket["ticket_id"], "editing preserves ticket IDs")
+        Check.equal(cleared["due_date"], .null, "due date can be cleared")
+        Check.equal(cleared["labels"]?.array?.count, 0, "labels can be cleared")
+        await fails("task_update", ["id": ticket["id"]!, "revision": cleared["revision"]!, "due_date": "tomorrow"], code: "invalid_date")
+        await fails("task_create", ["title": "Bad", "status": "unknown"], code: "invalid_status")
+        await fails("task_create", ["title": "Bad", "priority": 9], code: "invalid_arguments")
+        await fails("task_create", ["title": "Bad", "labels": [" "]], code: "invalid_arguments")
+        edits = false
+        await fails("task_status_create", ["name": "Forbidden", "category": "todo"], code: "read_only")
+        edits = true
+
+        Check.suite("Agents — parent tasks and blockers") {}
+        let parentTask = try await call("task_create", ["title": "Parent release"])
+        let childTask = try await call("task_create", ["title": "Child review", "parent_id": parentTask["ticket_id"]!])
+        let dependent = try await call("task_create", ["title": "Publish", "blocked_by": .array([childTask["ticket_id"]!])])
+        Check.equal(dependent["is_blocked"], true, "an incomplete blocker is reported")
+        let parentRead = try await call("task_get", ["id": parentTask["id"]!])
+        Check.equal(parentRead["subtask_ids"]?.array?.first, childTask["id"], "parent reads expose subtasks")
+        await fails("task_update", ["id": parentTask["id"]!, "revision": parentRead["revision"]!, "parent_id": childTask["id"]!], code: "invalid_relation")
+        await fails("task_update", ["id": childTask["id"]!, "revision": childTask["revision"]!, "blocked_by": .array([dependent["id"]!])], code: "invalid_relation")
+        _ = try await call("task_move", ["id": childTask["id"]!, "revision": childTask["revision"]!, "status": "done"])
+        Check.equal(try await call("task_get", ["id": dependent["id"]!])["is_blocked"], false, "completing a dependency clears the blocked indicator")
 
         Check.suite("Agents — Markdown notes, autosaves, folders, and revisions") {}
         _ = try await call("note_folder_create", ["name": "Research"])
