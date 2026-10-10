@@ -1,0 +1,13 @@
+{
+  "generator": "Built-in image_gen",
+  "assets": [
+    {
+      "asset": "paper-landscape",
+      "prompt": "Use case: ads-marketing. Asset type: high-resolution wide cinematic background artwork for the Foglio macOS productivity app landing page. Primary request: a sculptural landscape made from broad sheets of folded ivory paper, flowing gracefully in layered arcs like a quiet architectural landscape on a deep charcoal-black seamless stage. The paper curves emerge from the lower left and lower right, leaving the center and upper half mostly dark negative space for a website headline and a separate real application screenshot. Color palette: charcoal #10100e, warm ivory, restrained amber-gold rim light; absolutely no blue or purple. Style: premium editorial 3D still life, realistic paper fibers, precise folds, soft volumetric amber grazing light, beautiful subtle film grain, elegant and calm rather than flashy sci-fi. Composition: wide landscape 3:2, generous dark breathing room, sculpture visible in the bottom third and outer edges, no objects cropped awkwardly. Constraints: no letters, no text, no logo, no interface, no device, no watermark. This is a background asset; all webpage copy and product UI will be added separately in code."
+    },
+    {
+      "asset": "paper-sculpture",
+      "prompt": "Use case: product-mockup. Asset type: isolated foreground sculpture for the Foglio landing page, intended to gently float and rotate independently in website animations. Primary request: three beautiful thin ivory paper sheets arranged as an airy sculptural stack, one forming a soft loop or folded leaf, two gently curving behind it. A restrained amber-gold metallic bookmark strip travels over one sheet. Render the entire composition floating with balanced diagonal movement, premium editorial tactile 3D, physically plausible paper fibers and subtle edge thickness, soft shadows confined to the objects, warm studio lighting. Color palette only warm ivory, quiet gold, charcoal details; no blue, purple, or saturated colors. Composition: square, all edges fully visible, generous transparent margin around the object, no floor or background. Constraints: genuinely transparent alpha background, no fake checkerboard, no typography, no icons, no letters, no device, no user interface, no watermark. The background must remain transparent so the sculpture can be layered over dark and warm cream website sections."
+    }
+  ]
+}

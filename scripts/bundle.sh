@@ -34,12 +34,11 @@ for res in "$BIN"/Foglio_*.bundle; do
   [ -d "$res" ] && cp -R "$res" "$APP/Contents/Resources/"
 done
 
-# Icon: generated from scripts/make-icon.swift rather than committed as a
-# binary. Built once and reused, since compiling the script costs a few seconds.
-if [ ! -f "$ROOT/build/Foglio.icns" ]; then
-  ( cd "$ROOT" && swift scripts/make-icon.swift >/dev/null \
-      && iconutil -c icns build/Foglio.iconset -o build/Foglio.icns ) \
-    || echo "warning: could not build the app icon"
+# Icon: refresh when its source changes; compiler cache lives in the build
+# folder so restricted runners can generate the same resource locally.
+if [ ! -f "$ROOT/build/Foglio.icns" ] || [ "$ROOT/scripts/make-icon.swift" -nt "$ROOT/build/Foglio.icns" ]; then
+  mkdir -p "$ROOT/build/IconModuleCache"
+  swift -module-cache-path "$ROOT/build/IconModuleCache" scripts/make-icon.swift >/dev/null
 fi
 [ -f "$ROOT/build/Foglio.icns" ] && cp "$ROOT/build/Foglio.icns" "$APP/Contents/Resources/Foglio.icns"
 
@@ -54,8 +53,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleIconFile</key>          <string>Foglio</string>
   <key>CFBundleIdentifier</key>        <string>com.priyadharshan.foglio</string>
   <key>CFBundlePackageType</key>       <string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.3.2</string>
-  <key>CFBundleVersion</key>           <string>7</string>
+  <key>CFBundleShortVersionString</key><string>0.3.3</string>
+  <key>CFBundleVersion</key>           <string>8</string>
   <key>LSMinimumSystemVersion</key>    <string>14.0</string>
   <key>NSHighResolutionCapable</key>   <true/>
   <key>ATSApplicationFontsPath</key>   <string>Fonts</string>
