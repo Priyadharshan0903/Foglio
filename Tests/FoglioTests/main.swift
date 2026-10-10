@@ -16,6 +16,7 @@ MainActor.assumeIsolated { taskEditorTests() }
 MainActor.assumeIsolated { attachmentTests() }
 sourceModeTests()
 weekTests()
+datePickerTests()
 icsTests()
 importerTests()
 MainActor.assumeIsolated { snapshotAgeTests() }
