@@ -50,5 +50,12 @@ func renderTaskPreviewsIfRequested() {
         render("editor-" + mode.rawValue, width: 1080, height: 800, content: TaskDetailEditor(task: updated, isNew: false, store: store, theme: mode.theme, autoLog: false, onClose: {}, onDelete: {}))
     }
     render("statuses", width: 600, height: 620, content: TaskStatusManager(store: store, theme: .ember))
+    let previewToday = Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 11))!
+    let previewDate = Calendar.current.date(byAdding: .day, value: 3, to: previewToday)!
+    for mode in ThemeMode.allCases {
+        render("date-picker-" + mode.rawValue, width: 292, height: 378,
+               content: ThemedDateCalendar(selection: .constant(previewDate), theme: mode.theme,
+                                           today: previewToday, onClose: {}))
+    }
     print("Task previews saved to \(path)")
 }
