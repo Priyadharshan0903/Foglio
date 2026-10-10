@@ -1,4 +1,5 @@
 @testable import FoglioCore
+import Foundation
 
 designTokenTests()
 MainActor.assumeIsolated { themeTests() }
@@ -34,4 +35,9 @@ MainActor.assumeIsolated { exportTests() }
 
 MainActor.assumeIsolated { renderPreviewsIfRequested() }
 MainActor.assumeIsolated { renderLandingAssetsIfRequested() }
-Check.finish()
+connectorProtocolTests()
+Task { @MainActor in
+    await connectorIntegrationTests()
+    Check.finish()
+}
+dispatchMain()

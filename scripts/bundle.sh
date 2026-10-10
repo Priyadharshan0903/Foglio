@@ -16,6 +16,7 @@ cd "$ROOT"
 # Just the app product. Building everything drags in the FoglioTests target,
 # whose `@testable import` fails under -c release, where testability is off.
 "${SWIFT_BUILD[@]}" -c "$CONFIG" --product Foglio
+"${SWIFT_BUILD[@]}" -c "$CONFIG" --product FoglioMCP
 
 BIN="$("${SWIFT_BUILD[@]}" -c "$CONFIG" --show-bin-path)"
 APP="$ROOT/build/Foglio.app"
@@ -25,6 +26,7 @@ APP="$ROOT/build/Foglio.app"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 cp "$BIN/Foglio" "$APP/Contents/MacOS/Foglio"
+cp "$BIN/FoglioMCP" "$APP/Contents/MacOS/FoglioMCP"
 
 # SwiftPM emits resources as a .bundle next to the binary; fold its contents
 # into Contents/Resources so Bundle.main can find them (fonts, etc).
@@ -53,8 +55,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleIconFile</key>          <string>Foglio</string>
   <key>CFBundleIdentifier</key>        <string>com.priyadharshan.foglio</string>
   <key>CFBundlePackageType</key>       <string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.3.3</string>
-  <key>CFBundleVersion</key>           <string>8</string>
+  <key>CFBundleShortVersionString</key><string>0.4.0</string>
+  <key>CFBundleVersion</key>           <string>9</string>
   <key>LSMinimumSystemVersion</key>    <string>14.0</string>
   <key>NSHighResolutionCapable</key>   <true/>
   <key>ATSApplicationFontsPath</key>   <string>Fonts</string>
@@ -70,7 +72,8 @@ PLIST
 
 # Ad-hoc signature — enough to run locally. A real identity is only needed once
 # we ship or once EventKit's permission prompt comes into play.
-codesign --force --sign - "$APP" >/dev/null 2>&1 || echo "warning: ad-hoc codesign failed"
+codesign --force --sign - "$APP/Contents/MacOS/FoglioMCP" >/dev/null 2>&1
+codesign --force --sign - "$APP" >/dev/null 2>&1
 
 echo "built $APP"
 du -sh "$APP" | awk '{print "size: " $1}'

@@ -34,6 +34,7 @@ struct SettingsView: View {
                     storageGroup
                     appearanceGroup
                     workGroup
+                    agentConnectionsGroup
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -49,6 +50,33 @@ struct SettingsView: View {
     }
 
     // MARK: - Groups
+
+    private var agentConnectionsGroup: some View {
+        group("Agent connections") {
+            VStack(alignment: .leading, spacing: 16) {
+                Toggle("Allow agents to connect", isOn: $state.agentConnectorEnabled)
+                    .font(Typo.sans(13, .medium)).foregroundStyle(theme.text).tint(theme.accent)
+                Text("Let Codex and Claude read your notes, tasks, and connected calendar while Foglio is open.")
+                    .font(Typo.sans(11.5)).foregroundStyle(theme.muted)
+                Toggle("Allow agents to make changes", isOn: $state.agentConnectorAllowEdits)
+                    .font(Typo.sans(12)).foregroundStyle(theme.text).tint(theme.accent)
+                    .disabled(!state.agentConnectorEnabled)
+                Text(state.agentConnectorStatus).font(Typo.sans(11.5)).foregroundStyle(theme.muted)
+                HStack(spacing: 18) {
+                    Button("Copy Codex setup") { copyAgentSetup(AgentConnectorSetup.codexCommand) }
+                    Button("Copy Claude config") { copyAgentSetup(AgentConnectorSetup.claudeConfiguration) }
+                }
+                .buttonStyle(.flat).font(Typo.sans(11.5, .medium)).foregroundStyle(theme.accentDeep)
+                Text("Calendar edits use writable macOS calendars. Calendar URLs and .ics files can be read. Connections stay on this Mac.")
+                    .font(Typo.sans(11)).foregroundStyle(theme.muted)
+            }.padding(.vertical, 16)
+        }
+    }
+
+    private func copyAgentSetup(_ value: String) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(value, forType: .string)
+    }
 
     private var storageGroup: some View {
         group("Storage") {

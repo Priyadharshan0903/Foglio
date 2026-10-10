@@ -166,6 +166,9 @@ final class AppState {
     /// Where along that edge it sits, as a fraction (0 = top/left end).
     var barOffset: Double = 0.5 { didSet { defaults.set(barOffset, forKey: "barOffset") } }
     var autoLog: Bool = true { didSet { defaults.set(autoLog, forKey: "autoLog") } }
+    var agentConnectorEnabled = false { didSet { defaults.set(agentConnectorEnabled, forKey: "agentConnectorEnabled") } }
+    var agentConnectorAllowEdits = false { didSet { defaults.set(agentConnectorAllowEdits, forKey: "agentConnectorAllowEdits") } }
+    var agentConnectorStatus = "Off"
 
     var theme: Theme { themeMode.theme }
 
@@ -173,6 +176,8 @@ final class AppState {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        agentConnectorEnabled = defaults.bool(forKey: "agentConnectorEnabled")
+        agentConnectorAllowEdits = defaults.bool(forKey: "agentConnectorAllowEdits")
         taskLayout = TaskLayout(rawValue: defaults.string(forKey: "taskLayout") ?? "") ?? .board
         if defaults.object(forKey: "closeTaskOnOutsideClick") != nil {
             closeTaskOnOutsideClick = defaults.bool(forKey: "closeTaskOnOutsideClick")

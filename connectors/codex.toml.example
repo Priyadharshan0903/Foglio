@@ -1,0 +1,6 @@
+# Replace this absolute path with the Foglio app you installed.
+[mcp_servers.foglio]
+command = "/absolute/path/to/Foglio.app/Contents/MacOS/FoglioMCP"
+args = []
+startup_timeout_sec = 10
+tool_timeout_sec = 60

@@ -143,6 +143,9 @@ struct Note: Identifiable, Equatable, Codable {
     var folder: Folder = .scratch
     /// A task label or milestone title this note is pinned to (:1034).
     var pin: String?
+    /// Optional agent-created meeting association; displayed through the
+    /// human-readable pin, while this stable source ID stays in metadata.
+    var sourceEventID: String?
     var updatedAt: Date = Clock.now()
 
     /// When this note was moved to the trash, or nil if it isn't there.
@@ -232,6 +235,7 @@ struct TaskItem: Identifiable, Equatable, Codable {
     var completedAt: Date?
     var createdAt: Date = Clock.now()
     var workflow: TaskWorkflow?
+    var sourceEventID: String?
 }
 
 struct LogEntry: Identifiable, Equatable, Codable {

@@ -1,6 +1,7 @@
 import Foundation
 import EventKit
 import Observation
+import FoglioConnectorKit
 
 /// One meeting, independent of where it came from.
 struct DayEvent: Identifiable, Equatable {
@@ -51,6 +52,131 @@ struct DayEvent: Identifiable, Equatable {
             attendees: event.attendees,
             calendar: event.calendarName
         )
+    }
+}
+
+// MARK: - Agent calendar access
+
+extension CalendarSource: AgentCalendarProviding {
+    var connectorRange: DateInterval { range }
+    var connectorInfo: JSON {
+        ["backend": .string(backend.rawValue), "name": .string(backend.label),
+         "writable": .bool(backend == .eventKit && EKEventStore.authorizationStatus(for: .event) == .fullAccess),
+         "access": .string(backend == .eventKit ? String(describing: access) : (needsSetup ? "needs_setup" : "configured"))]
+    }
+    private func requireConnectorCalendarAccess(writing: Bool = false) throws {
+        guard backend == .eventKit else { throw ConnectorError("calendar_read_only", "Calendar URL and .ics sources are read-only. Select macOS Calendar to edit events.") }
+        guard EKEventStore.authorizationStatus(for: .event) == .fullAccess else {
+            throw ConnectorError("calendar_permission", "Grant Calendar access inside Foglio first. Agent requests do not open permission prompts.")
+        }
+    }
+    func connectorCalendars() throws -> [JSON] {
+        if backend != .eventKit {
+            return calendarCounts.map { ["id": .null, "name": .string($0.name), "writable": false] }
+        }
+        try requireConnectorCalendarAccess()
+        return store.calendars(for: .event).map { ["id": .string($0.calendarIdentifier), "name": .string($0.title), "writable": .bool($0.allowsContentModifications)] }
+    }
+    func connectorEvents(in range: DateInterval) async throws -> [AgentEvent] {
+        if backend == .eventKit {
+            try requireConnectorCalendarAccess()
+            return store.events(matching: store.predicateForEvents(withStart: range.start, end: range.end, calendars: nil))
+                .filter { !$0.isAllDay }.sorted { $0.startDate < $1.startDate }.map(connectorEvent)
+        }
+        let text: String
+        if backend == .file {
+            guard let importPath else { throw ConnectorError("calendar_setup", "Choose a calendar file in Foglio first.") }
+            do { text = try ICSImporter.read(URL(fileURLWithPath: importPath)) }
+            catch { throw ConnectorError("calendar_source", "Could not read the selected calendar file. Check Calendar in Foglio.") }
+        } else {
+            guard let url = URL(string: Self.normalize(subscriptionURL)), ["https", "http"].contains(url.scheme ?? "") else {
+                throw ConnectorError("calendar_setup", "Configure the calendar URL in Foglio first.")
+            }
+            var request = URLRequest(url: url); request.timeoutInterval = 20
+            request.setValue("Foglio/0.4 (macOS)", forHTTPHeaderField: "User-Agent")
+            do {
+                let (data, response) = try await URLSession.shared.data(for: request)
+                guard (response as? HTTPURLResponse)?.statusCode == 200,
+                      let decoded = String(data: data, encoding: .utf8), decoded.contains("BEGIN:VCALENDAR") else {
+                    throw ConnectorError("calendar_source", "Calendar feed could not be read.")
+                }
+                text = decoded
+            } catch { throw ConnectorError("calendar_source", "Could not read the selected calendar feed. Check Calendar in Foglio.") }
+        }
+        // A connector query never changes the week currently shown in the app.
+        return ICS.events(from: text, in: range).map { event in
+            let day = DayEvent(event)
+            return AgentEvent(id: day.id, title: day.title, start: day.start, end: day.end,
+                              location: day.location, notes: "", calendarID: nil, calendarName: day.calendar,
+                              organizer: day.organizer, attendees: day.attendees, writable: false, revision: AgentRevision.of(dayAgentFields(day)))
+        }
+    }
+    private func dayAgentFields(_ event: DayEvent) -> JSON {
+        ["id": .string(event.id), "title": .string(event.title), "start": .string(AgentRevision.date(event.start)),
+         "end": .string(AgentRevision.date(event.end)), "location": .string(event.location),
+         "calendar": .string(event.calendar), "organizer": .string(event.organizer), "attendees": .array(event.attendees.map(JSON.string))]
+    }
+    func connectorEvent(id: String, date: Date?) async throws -> AgentEvent {
+        if backend == .eventKit {
+            try requireConnectorCalendarAccess()
+            guard let event = store.event(withIdentifier: id) else { throw ConnectorError("not_found", "Calendar event not found.") }
+            return connectorEvent(event)
+        }
+        let range = date.map(Self.week(containing:)) ?? self.range
+        guard let event = try await connectorEvents(in: range).first(where: { $0.id == id }) else {
+            throw ConnectorError("not_found", "Event not found in this week. Supply date from calendar_events for another week.")
+        }
+        return event
+    }
+    private func connectorEvent(_ event: EKEvent) -> AgentEvent {
+        let fields: JSON = ["id": .string(event.eventIdentifier ?? event.calendarItemIdentifier), "title": .string(event.title ?? "Untitled"),
+                            "start": .string(AgentRevision.date(event.startDate)), "end": .string(AgentRevision.date(event.endDate)),
+                            "location": .string(event.location ?? ""), "notes": .string(event.notes ?? ""),
+                            "calendar": .string(event.calendar.calendarIdentifier), "all_day": .bool(event.isAllDay),
+                            "modified": event.lastModifiedDate.map { .string(AgentRevision.date($0)) } ?? .null]
+        return AgentEvent(id: event.eventIdentifier ?? event.calendarItemIdentifier, title: event.title ?? "Untitled",
+                          start: event.startDate, end: event.endDate, location: event.location ?? "", notes: event.notes ?? "",
+                          calendarID: event.calendar.calendarIdentifier, calendarName: event.calendar.title,
+                          organizer: event.organizer?.name ?? "", attendees: event.attendees?.compactMap(\.name) ?? [],
+                          writable: event.calendar.allowsContentModifications && personalEvent(event), revision: AgentRevision.of(fields))
+    }
+    private func personalEvent(_ event: EKEvent) -> Bool {
+        event.attendees?.isEmpty != false && event.organizer == nil && !event.hasRecurrenceRules && !event.isDetached && !event.isAllDay
+    }
+    private func applyConnectorFields(_ fields: [String: JSON], to event: EKEvent) throws {
+        if let calendarID = fields["calendar_id"]?.string {
+            guard let calendar = store.calendar(withIdentifier: calendarID), calendar.allowedEntityTypes.contains(.event),
+                  calendar.allowsContentModifications else { throw ConnectorError("calendar_read_only", "Choose a writable event calendar from calendar_list.") }
+            event.calendar = calendar
+        }
+        if let title = fields["title"]?.string { event.title = title.trimmingCharacters(in: .whitespacesAndNewlines) }
+        if let location = fields["location"]?.string { event.location = location }
+        if let notes = fields["notes"]?.string { event.notes = notes }
+        if let start = fields["start"]?.string { event.startDate = try AgentRevision.parse(start) }
+        if let end = fields["end"]?.string { event.endDate = try AgentRevision.parse(end) }
+        guard let start = event.startDate, let end = event.endDate, end > start else { throw ConnectorError("invalid_range", "Event end must be after its start.") }
+    }
+    func connectorCreateEvent(fields: [String: JSON]) throws -> AgentEvent {
+        try requireConnectorCalendarAccess(writing: true)
+        let event = EKEvent(eventStore: store)
+        try applyConnectorFields(fields, to: event)
+        do { try store.save(event, span: .thisEvent, commit: true) }
+        catch { throw ConnectorError("calendar_save_failed", "macOS Calendar could not save this event. Check calendar permissions and account status.") }
+        Task { await self.refresh(range: self.range) }
+        return connectorEvent(event)
+    }
+    func connectorUpdateEvent(id: String, revision: String, fields: [String: JSON]) throws -> AgentEvent {
+        try requireConnectorCalendarAccess(writing: true)
+        guard let event = store.event(withIdentifier: id) else { throw ConnectorError("not_found", "Calendar event not found.") }
+        guard connectorEvent(event).revision == revision else { throw ConnectorError("conflict", "The event changed. Get its latest revision before editing.") }
+        guard event.calendar.allowsContentModifications, personalEvent(event) else {
+            throw ConnectorError("calendar_read_only", "This tool edits personal, non-recurring timed events only. Invited meetings, recurring events, all-day events, and read-only calendars must be edited in Calendar.")
+        }
+        try applyConnectorFields(fields, to: event)
+        do { try store.save(event, span: .thisEvent, commit: true) }
+        catch { throw ConnectorError("calendar_save_failed", "macOS Calendar could not save the event. Check Calendar in Foglio.") }
+        Task { await self.refresh(range: self.range) }
+        return connectorEvent(event)
     }
 }
 
@@ -156,9 +282,12 @@ final class CalendarSource {
     }
 
     private let store = EKEventStore()
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
+    private let cacheRoot: URL
 
-    init() {
+    init(defaults: UserDefaults = .standard, cacheRoot: URL? = nil) {
+        self.defaults = defaults
+        self.cacheRoot = cacheRoot ?? Store.defaultRoot()
         if let raw = defaults.string(forKey: "calendarBackend"),
            let saved = CalendarBackend(rawValue: raw) {
             backend = saved
@@ -361,12 +490,12 @@ final class CalendarSource {
     }
 
     private var cacheURL: URL {
-        Store.defaultRoot().appendingPathComponent("calendar.ics")
+        cacheRoot.appendingPathComponent("calendar.ics")
     }
 
     private func cache(_ text: String) {
         try? FileManager.default.createDirectory(
-            at: Store.defaultRoot(), withIntermediateDirectories: true
+            at: cacheRoot, withIntermediateDirectories: true
         )
         try? text.write(to: cacheURL, atomically: true, encoding: .utf8)
     }

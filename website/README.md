@@ -39,7 +39,7 @@ App previews contain fictional example content from an isolated library, not per
 
 The build checks that the source contains a complete UDIF disk image, copies only that selected release, computes its SHA-256 checksum, and updates version text and download links in the production HTML. Source downloads and production output are ignored by Git. Do not commit the generated DMG copies.
 
-The current download is **0.3.3**, **Apple silicon**, **macOS 14+**. It is a locally signed preview, not a notarized public release; the page makes this clear in its questions section. This landing page does not change app signing, licensing, or release policy.
+The current download is **0.4.0**, **Apple silicon**, **macOS 14+**. It is a locally signed preview, not a notarized public release; the page makes this clear in its questions section. This landing page does not change app signing, licensing, or release policy.
 
 ## Build
 

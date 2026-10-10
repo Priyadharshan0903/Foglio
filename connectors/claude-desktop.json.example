@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "foglio": {
+      "command": "/absolute/path/to/Foglio.app/Contents/MacOS/FoglioMCP",
+      "args": []
+    }
+  }
+}
