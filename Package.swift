@@ -11,11 +11,14 @@ let package = Package(
     name: "Foglio",
     platforms: [.macOS(.v14)],
     targets: [
+        .target(name: "FoglioConnectorKit", path: "Sources/FoglioConnectorKit",
+                swiftSettings: [.swiftLanguageMode(.v5)]),
         // All app code lives here. Tests link this, never the executable —
         // linking an executable into a test host starts the AppKit run loop
         // and hangs the runner.
         .target(
             name: "FoglioCore",
+            dependencies: ["FoglioConnectorKit"],
             path: "Sources/FoglioCore",
             resources: [.process("Resources")],
             swiftSettings: [.swiftLanguageMode(.v5)]
@@ -28,9 +31,11 @@ let package = Package(
         ),
         .executableTarget(
             name: "FoglioTests",
-            dependencies: ["FoglioCore"],
+            dependencies: ["FoglioCore", "FoglioConnectorKit"],
             path: "Tests/FoglioTests",
             swiftSettings: [.swiftLanguageMode(.v5)]
         ),
+        .executableTarget(name: "FoglioMCP", dependencies: ["FoglioConnectorKit"],
+                          path: "Sources/FoglioMCP", swiftSettings: [.swiftLanguageMode(.v5)]),
     ]
 )

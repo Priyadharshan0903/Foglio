@@ -1,4 +1,4 @@
-.PHONY: build run test bundle app dmg install clean
+.PHONY: build run test mcp bundle app dmg install clean
 
 build:
 	swift build
@@ -11,7 +11,11 @@ run: build
 # `swift test` is unusable without Xcode (see Package.swift), so the suite is a
 # plain executable.
 test:
+	@swift build --product FoglioMCP
 	@swift run FoglioTests
+
+mcp:
+	@swift build --product FoglioMCP
 
 bundle:
 	@./scripts/bundle.sh debug

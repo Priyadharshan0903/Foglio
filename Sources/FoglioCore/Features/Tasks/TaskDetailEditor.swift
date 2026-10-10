@@ -98,6 +98,8 @@ struct TaskDetailEditor: View {
                 .allowsHitTesting(false).accessibilityHidden(true)
         }
         .interactiveDismissDisabled()
+        .onAppear { if !isNew { store.editingTaskIds.insert(task.id) } }
+        .onDisappear { store.editingTaskIds.remove(task.id) }
         .preferredColorScheme(theme.isDark ? .dark : .light)
         .onExitCommand(perform: requestClose).task {
             if isNew { nameFocused = true } else { cardFocused = true }

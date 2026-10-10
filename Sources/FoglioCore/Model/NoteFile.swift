@@ -36,6 +36,9 @@ enum NoteFile {
         if let pin = note.pin, !pin.isEmpty {
             head.append("pin: \(pin)")
         }
+        if let eventID = note.sourceEventID, let data = try? JSONEncoder().encode(eventID) {
+            head.append("event: \(String(decoding: data, as: UTF8.self))")
+        }
         head.append("updated: \(formatter.string(from: note.updatedAt))")
         // Only written for notes in the trash, so a file in `notes/` never
         // carries the key at all — the folder stays readable as plain notes.
@@ -73,6 +76,7 @@ enum NoteFile {
             // hasn't seen yet, and an empty one falls back to Scratch.
             case "folder": note.folder = Folder(rawValue: value)
             case "pin": note.pin = value.isEmpty ? nil : value
+            case "event": note.sourceEventID = try? JSONDecoder().decode(String.self, from: Data(value.utf8))
             case "updated": note.updatedAt = formatter.date(from: value) ?? note.updatedAt
             case "deleted": note.deletedAt = formatter.date(from: value)
             default: break

@@ -31,6 +31,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var window: NSWindow?
     private var ticker: Timer?
     private var calendarTimer: Timer?
+    private var agentConnector: AgentConnectorController?
     private var lastBadge: String?
 
     /// Observers for the trash sweep — see `startTrashSweep()`.
@@ -41,6 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         Typo.registerBundledFonts()
         Debug.log("fonts: geist=\(Typo.geistAvailable) sample=\(Typo.describeResolved())")
         store.load()
+        agentConnector = AgentConnectorController(state: state, store: store, calendar: calendar)
+        agentConnector?.applySettings()
+        observeAgentSettings()
         // Created up front rather than lazily the first time the bar's quick
         // panel renders — a disk write belongs in the load path, not as a
         // side effect of a SwiftUI view body evaluating.
@@ -90,6 +94,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
                 MainActor.assumeIsolated {
                     self?.bar?.applyEdge()
                     self?.observeBarEdge()
+                }
+            }
+        }
+    }
+
+    private func observeAgentSettings() {
+        withObservationTracking {
+            _ = state.agentConnectorEnabled
+            _ = state.agentConnectorAllowEdits
+        } onChange: { [weak self] in
+            DispatchQueue.main.async {
+                MainActor.assumeIsolated {
+                    self?.agentConnector?.applySettings()
+                    self?.observeAgentSettings()
                 }
             }
         }
@@ -193,6 +211,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        agentConnector?.stop()
         store.flushPendingSaves()
     }
 

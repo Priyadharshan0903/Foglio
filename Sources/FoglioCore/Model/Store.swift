@@ -44,6 +44,9 @@ final class Store {
     private(set) var milestones: [Milestone] = []
 
     let root: URL
+    @ObservationIgnored private(set) var persistenceError: String?
+    @ObservationIgnored var editingTaskIds: Set<UUID> = []
+    func clearPersistenceError() { persistenceError = nil }
     private var loaded = false
 
     /// The filename each note currently occupies on disk.
@@ -218,9 +221,11 @@ final class Store {
         let e = JSONEncoder()
         e.dateEncodingStrategy = .iso8601
         e.outputFormatting = [.prettyPrinted, .sortedKeys]
-        guard let data = try? e.encode(value) else { return }
-        try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
-        try? data.write(to: url, options: .atomic)
+        do {
+            let data = try e.encode(value)
+            try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+            try data.write(to: url, options: .atomic)
+        } catch { persistenceError = error.localizedDescription }
     }
 
     // MARK: - Notes
@@ -518,20 +523,17 @@ final class Store {
         // queued. That older snapshot must not overwrite this newer value.
         pendingSaves[note.id]?.cancel()
         pendingSaves[note.id] = nil
-        try? FileManager.default.createDirectory(at: notesDir, withIntermediateDirectories: true)
-
         let name = NoteFile.filename(for: note)
-        // A retitled note moves file: drop the old one rather than orphan it.
-        if let previous = fileNames[note.id], previous != name {
-            try? FileManager.default.removeItem(at: notesDir.appendingPathComponent(previous))
-        }
-        fileNames[note.id] = name
-
-        try? NoteFile.encode(note).write(
-            to: notesDir.appendingPathComponent(name),
-            atomically: true,
-            encoding: .utf8
-        )
+        do {
+            try FileManager.default.createDirectory(at: notesDir, withIntermediateDirectories: true)
+            // Persist the replacement before removing the old title's file.
+            try NoteFile.encode(note).write(to: notesDir.appendingPathComponent(name), atomically: true, encoding: .utf8)
+            if let previous = fileNames[note.id], previous != name,
+               FileManager.default.fileExists(atPath: notesDir.appendingPathComponent(previous).path) {
+                try FileManager.default.removeItem(at: notesDir.appendingPathComponent(previous))
+            }
+            fileNames[note.id] = name
+        } catch { persistenceError = error.localizedDescription }
     }
 
     private func saveNotes() { notes.forEach(saveNote) }
