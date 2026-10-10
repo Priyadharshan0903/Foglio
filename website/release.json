@@ -1,7 +1,7 @@
 {
-  "version": "0.4.0",
+  "version": "0.5.0",
   "minimumMacOS": "14",
   "architecture": "Apple silicon",
-  "filename": "Foglio-0.4.0.dmg",
+  "filename": "Foglio-0.5.0.dmg",
   "channel": "Preview"
 }

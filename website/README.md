@@ -39,7 +39,11 @@ App previews contain fictional example content from an isolated library, not per
 
 The build checks that the source contains a complete UDIF disk image, copies only that selected release, computes its SHA-256 checksum, and updates version text and download links in the production HTML. Source downloads and production output are ignored by Git. Do not commit the generated DMG copies.
 
-The current download is **0.4.0**, **Apple silicon**, **macOS 14+**. It is a locally signed preview, not a notarized public release; the page makes this clear in its questions section. This landing page does not change app signing, licensing, or release policy.
+The current download is **0.5.0**, **Apple silicon**, **macOS 14+**. It is a locally signed preview, not a notarized public release; the page makes this clear in its questions section. This landing page does not change app signing, licensing, or release policy.
+
+## Deploy
+
+Every push to `main` runs [.github/workflows/pages.yml](../.github/workflows/pages.yml): it builds the app and DMG on macOS, builds this site around that exact DMG, and publishes `dist/` to GitHub Pages. It can also be started by hand from the Actions tab. The run fails if the app version and `release.json` disagree, so bump both together. The CI image's Applications shortcut points at `/Applications`. The DMG is ad-hoc signed until a Developer ID is available.
 
 ## Build
 

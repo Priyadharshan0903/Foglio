@@ -49,8 +49,16 @@ enum AgentConnectorSetup {
         return (Bundle.main.executableURL?.deletingLastPathComponent() ?? Bundle.main.bundleURL)
             .appendingPathComponent("FoglioMCP").path
     }
+    private static var quotedExecutable: String {
+        "'" + executable.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
     static var codexCommand: String {
-        "codex mcp add foglio -- '" + executable.replacingOccurrences(of: "'", with: "'\\''") + "'"
+        "codex mcp add foglio -- " + quotedExecutable
+    }
+    /// Claude Code in the terminal and in the Claude desktop app share the
+    /// user-scope MCP registry, so one command covers both.
+    static var claudeCodeCommand: String {
+        "claude mcp add --transport stdio --scope user foglio -- " + quotedExecutable
     }
     static var claudeConfiguration: String {
         let value: JSON = ["mcpServers": ["foglio": ["command": .string(executable), "args": []]]]

@@ -79,7 +79,7 @@ func renderLandingAssetsIfRequested() {
     }
     state.section = .tasks; state.themeMode = .ember
     render("tasks-ember", content: MainWindowView(state: state, store: store, calendar: calendar))
-    render("editor-ember", width: 680, height: 620,
+    render("editor-ember", width: 1080, height: 800,
            content: TaskDetailEditor(task: TaskItem(label: "Design the welcome page", lane: work,
                                                    meta: "## Start with the essentials\nA **clear idea**, a little _personality_, and room to breathe.\n\n- [x] Find the direction\n- [ ] Refine the details\n- [ ] Share the first version\n\n> Small things, done thoughtfully.\n\n| Detail | Next step |\n| --- | --- |\n| Writing | Keep it clear |\n| Design | Make room |", workflow: .inProgress),
                                      isNew: false, store: store, theme: .ember, autoLog: false, onClose: {}, onDelete: {}))

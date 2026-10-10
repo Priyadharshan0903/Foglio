@@ -14,6 +14,8 @@ struct SettingsView: View {
     let store: Store
 
     @State private var exportStatus: String?
+    @State private var copiedSetup: String?
+    @State private var copiedReset: Task<Void, Never>?
 
     private var theme: Theme { state.theme }
 
@@ -56,26 +58,52 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 16) {
                 Toggle("Allow agents to connect", isOn: $state.agentConnectorEnabled)
                     .font(Typo.sans(13, .medium)).foregroundStyle(theme.text).tint(theme.accent)
-                Text("Let Codex and Claude read your notes, tasks, and connected calendar while Foglio is open.")
+                Text("Let Codex, Claude Code, and Claude Desktop read your notes, tasks, and connected calendar while Foglio is open.")
                     .font(Typo.sans(11.5)).foregroundStyle(theme.muted)
                 Toggle("Allow agents to make changes", isOn: $state.agentConnectorAllowEdits)
                     .font(Typo.sans(12)).foregroundStyle(theme.text).tint(theme.accent)
                     .disabled(!state.agentConnectorEnabled)
                 Text(state.agentConnectorStatus).font(Typo.sans(11.5)).foregroundStyle(theme.muted)
                 HStack(spacing: 18) {
-                    Button("Copy Codex setup") { copyAgentSetup(AgentConnectorSetup.codexCommand) }
-                    Button("Copy Claude config") { copyAgentSetup(AgentConnectorSetup.claudeConfiguration) }
+                    copySetupButton("Copy Codex setup", AgentConnectorSetup.codexCommand)
+                    copySetupButton("Copy Claude Code setup", AgentConnectorSetup.claudeCodeCommand)
+                    copySetupButton("Copy Claude Desktop config", AgentConnectorSetup.claudeConfiguration)
                 }
-                .buttonStyle(.flat).font(Typo.sans(11.5, .medium)).foregroundStyle(theme.accentDeep)
+                .buttonStyle(.flat).font(Typo.sans(11.5, .medium))
                 Text("Calendar edits use writable macOS calendars. Calendar URLs and .ics files can be read. Connections stay on this Mac.")
                     .font(Typo.sans(11)).foregroundStyle(theme.muted)
             }.padding(.vertical, 16)
         }
     }
 
-    private func copyAgentSetup(_ value: String) {
+    /// The label briefly turns into a checkmark so the copy is visible. The
+    /// original label stays laid out underneath, keeping the row from shifting.
+    private func copySetupButton(_ title: String, _ value: String) -> some View {
+        let copied = copiedSetup == title
+        return Button { copyAgentSetup(title, value) } label: {
+            ZStack(alignment: .leading) {
+                Text(title).opacity(copied ? 0 : 1)
+                Label("Copied", systemImage: "checkmark")
+                    .labelStyle(.titleAndIcon)
+                    .opacity(copied ? 1 : 0)
+            }
+            .foregroundStyle(copied ? theme.accent : theme.accentDeep)
+        }
+        .help(copied ? "Copied to clipboard" : title)
+    }
+
+    private func copyAgentSetup(_ title: String, _ value: String) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(value, forType: .string)
+        withAnimation(.easeOut(duration: 0.15)) { copiedSetup = title }
+        NSAccessibility.post(element: NSApp as Any, notification: .announcementRequested,
+                             userInfo: [.announcement: "Copied to clipboard", .priority: NSAccessibilityPriorityLevel.high.rawValue])
+        copiedReset?.cancel()
+        copiedReset = Task { @MainActor in
+            try? await Task.sleep(for: .seconds(1.6))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.25)) { copiedSetup = nil }
+        }
     }
 
     private var storageGroup: some View {

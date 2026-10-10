@@ -26,7 +26,10 @@ codesign --verify --deep --strict "$APP"
 CONTENTS="$STAGE/contents"
 mkdir -p "$CONTENTS"
 ditto "$APP" "$CONTENTS/Foglio.app"
-ln -s "$HOME/Applications" "$CONTENTS/Applications"
+# The link is stored as an absolute path, so an image built for other people
+# (CI) must not bake in the builder's home. Set FOGLIO_DMG_APPLICATIONS_LINK
+# to /Applications there.
+ln -s "${FOGLIO_DMG_APPLICATIONS_LINK:-$HOME/Applications}" "$CONTENTS/Applications"
 
 # UDZO is compressed and read-only, which is what a distributable image should
 # be — and what makes the copy out of it atomic from the Finder's side.

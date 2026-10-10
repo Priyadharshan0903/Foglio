@@ -11,6 +11,7 @@ notesTests()
 MainActor.assumeIsolated { continuousEditorTests() }
 MainActor.assumeIsolated { richEditorTests() }
 MainActor.assumeIsolated { taskWorkflowTests() }
+MainActor.assumeIsolated { taskWorkspaceTests() }
 MainActor.assumeIsolated { taskEditorTests() }
 MainActor.assumeIsolated { attachmentTests() }
 sourceModeTests()
@@ -34,6 +35,7 @@ MainActor.assumeIsolated { trashTests() }
 MainActor.assumeIsolated { exportTests() }
 
 MainActor.assumeIsolated { renderPreviewsIfRequested() }
+MainActor.assumeIsolated { renderTaskPreviewsIfRequested() }
 MainActor.assumeIsolated { renderLandingAssetsIfRequested() }
 connectorProtocolTests()
 Task { @MainActor in
