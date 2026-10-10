@@ -145,6 +145,10 @@ struct SettingsView: View {
         do {
             let archive = try Exporter.importArchive(from: url)
             store.replaceAll(with: archive)
+            state.activeNoteId = nil
+            state.folderFilter = nil
+            state.search = ""
+            state.endNoteSelection()
             exportStatus = "Imported \(archive.notes.count) notes and \(archive.tasks.count) tasks"
         } catch {
             exportStatus = "Import failed: \(error.localizedDescription)"
@@ -269,6 +273,12 @@ struct SettingsView: View {
                     options: [("On", true), ("Off", false)],
                     selection: state.autoLog
                 ) { state.autoLog = $0 }
+            }
+            settingRow("Close task on outside click", hint: "Ask before closing a task with unsaved changes") {
+                segmented(
+                    options: [("On", true), ("Off", false)],
+                    selection: state.closeTaskOnOutsideClick
+                ) { state.closeTaskOnOutsideClick = $0 }
             }
         }
     }

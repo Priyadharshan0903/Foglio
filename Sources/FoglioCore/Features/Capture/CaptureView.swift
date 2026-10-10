@@ -19,17 +19,16 @@ struct CaptureView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text("Quick capture")
+                    Text("Activity")
                         .font(Typo.sans(19, .semibold))
                         .kerning(-0.3)
                         .foregroundStyle(theme.text)
-                    Text("A task if it's next, a log entry if it's done.")
+                    Text("Add a task or remember something you did today.")
                         .font(Typo.sans(12.5))
                         .foregroundStyle(theme.muted)
                 }
 
                 inputRow
-                laneRow
                 todaySection
             }
             .frame(maxWidth: 760, alignment: .leading)
@@ -66,7 +65,7 @@ struct CaptureView: View {
             .buttonStyle(.flat)
 
             Button(action: addLog) {
-                Text("Log it")
+                Text("Add to activity")
                     .font(Typo.sans(12.5, .semibold))
                     .foregroundStyle(theme.text)
                     .padding(.horizontal, 17).padding(.vertical, 12)
@@ -84,27 +83,6 @@ struct CaptureView: View {
     /// deleted on the task page.
     private var draftLane: Lane {
         store.lanes.contains(state.draftLane) ? state.draftLane : store.defaultLane
-    }
-
-    private var laneRow: some View {
-        HStack(spacing: 6) {
-            ForEach(store.lanes) { lane in
-                let selected = draftLane == lane
-                Button { state.draftLane = lane } label: {
-                    Text(lane.label)
-                        .font(Typo.sans(11, .medium))
-                        .foregroundStyle(selected ? theme.onAccent : theme.muted)
-                        .padding(.horizontal, 11).padding(.vertical, 5)
-                        .background(selected ? theme.accent : .clear)
-                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-                        .overlay(
-                            RoundedRectangle(cornerRadius: 6, style: .continuous)
-                                .strokeBorder(theme.line, lineWidth: 1)
-                        )
-                }
-                .buttonStyle(.flat)
-            }
-        }
     }
 
     private var todaySection: some View {

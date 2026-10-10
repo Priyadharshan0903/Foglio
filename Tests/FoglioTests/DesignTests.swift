@@ -27,7 +27,7 @@ func designTokenTests() {
         // Trash is somewhere you go to undo something, not somewhere you work,
         // so it stays off the floating bar and sits last on the rail.
         Check.expect(!Section.barItems.contains(.trash), "trash is not on the bar")
-        Check.equal(Section.railItems.last, .trash, "and sits at the end of the rail")
+        Check.expect(Section.utilityItems.contains(.trash), "trash sits with the utility sections")
     }
 }
 

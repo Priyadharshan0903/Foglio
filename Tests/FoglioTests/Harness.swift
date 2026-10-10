@@ -1,4 +1,16 @@
 import Foundation
+@testable import FoglioCore
+
+/// Explicit legacy fixtures keep persistence and migration checks independent
+/// of what the current app chooses to show on first launch.
+@MainActor
+func exampleStore(at root: URL) -> Store {
+    let store = Store(root: root)
+    store.load()
+    store.replaceAll(with: Archive(notes: Seed.notes, folders: Folder.starters, lanes: Lane.starters, tasks: Seed.tasks,
+                                   log: Seed.log, milestones: Seed.milestones))
+    return store
+}
 
 // A deliberately tiny test harness.
 //

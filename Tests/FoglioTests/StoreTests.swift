@@ -3,6 +3,26 @@ import Foundation
 
 @MainActor
 func storeTests() {
+    Check.suite("First launch — a clean personal library") {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("foglio-onboarding-\(UUID())")
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = Store(root: root)
+        store.load()
+        Check.equal(store.notes.map(\.title), ["Welcome to Foglio"], "first launch shows a short welcome note")
+        Check.expect(store.tasks.isEmpty && store.log.isEmpty && store.milestones.isEmpty, "personal work starts empty")
+        Check.equal(store.folders, [.scratch], "one folder is enough to start")
+        Check.equal(store.lanes, [Lane("To do")], "tasks start with one clearly named list")
+        store.trashNotes(ids: store.notes.map(\.id))
+        let reopened = Store(root: root)
+        reopened.load()
+        Check.expect(reopened.notes.isEmpty, "emptying notes doesn't recreate the welcome note")
+        reopened.replaceAll(with: Archive())
+        let empty = Store(root: root)
+        empty.load()
+        Check.expect(empty.notes.isEmpty && empty.tasks.isEmpty && empty.milestones.isEmpty,
+                     "importing an empty library stays empty after relaunch")
+    }
+
     Check.suite("Note files — frontmatter") {
         var note = Note(
             title: "Operator — reconcile loop notes",
@@ -77,8 +97,7 @@ func storeTests() {
             .appendingPathComponent("foglio-test-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let store = Store(root: root)
-        store.load() // seeds on an empty directory
+        let store = exampleStore(at: root)
 
         Check.equal(store.notes.count, 4, "seeds four notes")
         Check.equal(store.milestones.count, 3, "seeds three milestones")
@@ -165,8 +184,7 @@ func storeTests() {
             .appendingPathComponent("foglio-test-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: root) }
 
-        let store = Store(root: root)
-        store.load()
+        let store = exampleStore(at: root)
 
         let targets = store.pinTargets
         Check.expect(targets.contains("Kubernetes, to CKA"), "milestones are pin targets")
@@ -186,8 +204,7 @@ func renameTests() {
     func freshStore() -> (Store, URL) {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("foglio-test-\(UUID().uuidString)")
-        let store = Store(root: root)
-        store.load()
+        let store = exampleStore(at: root)
         return (store, root)
     }
 
@@ -323,8 +340,7 @@ func folderTests() {
     func freshStore() -> (Store, URL) {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("foglio-test-\(UUID().uuidString)")
-        let store = Store(root: root)
-        store.load()
+        let store = exampleStore(at: root)
         return (store, root)
     }
 

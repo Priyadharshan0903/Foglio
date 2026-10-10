@@ -88,17 +88,18 @@ final class Store {
         notes = loadNotes()
         trash = loadTrash()
 
-        folders = decode([Folder].self, from: foldersURL) ?? Folder.starters
-        lanes = decode([Lane].self, from: lanesURL) ?? Lane.starters
+        // Only a genuinely new directory receives the welcome note. Emptying
+        // a library or importing an empty archive must stay empty on relaunch.
+        let isNewStore = notes.isEmpty && trash.isEmpty && ![foldersURL, lanesURL, tasksURL, logURL, milestonesURL]
+            .contains { FileManager.default.fileExists(atPath: $0.path) }
+        folders = decode([Folder].self, from: foldersURL) ?? [.scratch]
+        lanes = decode([Lane].self, from: lanesURL) ?? [Lane("To do")]
         tasks = decode([TaskItem].self, from: tasksURL) ?? []
         log = decode([LogEntry].self, from: logURL) ?? []
         milestones = decode([Milestone].self, from: milestonesURL) ?? []
 
-        if milestones.isEmpty { milestones = Seed.milestones }
-        if notes.isEmpty && tasks.isEmpty && log.isEmpty {
-            notes = Seed.notes
-            tasks = Seed.tasks
-            log = Seed.log
+        if isNewStore {
+            notes = [Seed.welcome]
             saveNotes()
             saveTasks()
             saveLog()
@@ -144,7 +145,7 @@ final class Store {
         }
         // An empty board has no column to drop a new task into, and no header
         // to hang the "new lane" button off.
-        if lanes.isEmpty { lanes = Lane.starters }
+        if lanes.isEmpty { lanes = [Lane("To do")] }
         saveLanes()
     }
 
@@ -226,6 +227,14 @@ final class Store {
 
     func note(id: UUID) -> Note? { notes.first { $0.id == id } }
 
+    /// Merge into the latest value so typing cannot undo a recent rename,
+    /// folder move or link change captured by an older view.
+    func updateNoteBody(id: UUID, body: String) {
+        guard var current = note(id: id), current.body != body else { return }
+        current.body = body
+        upsert(current, debounced: true)
+    }
+
     /// The bar's always-there quick-notes note — found by `id` and created
     /// once if it doesn't exist yet, unlike the rest of Notes where every note
     /// starts as a fresh untitled file.
@@ -263,7 +272,7 @@ final class Store {
 
     /// Force out anything still queued — call when a note stops being edited.
     func flushPendingSaves() {
-        for (id, task) in pendingSaves {
+        for (id, task) in Array(pendingSaves) {
             task.cancel()
             if let note = notes.first(where: { $0.id == id }) { saveNote(note) }
         }
@@ -272,6 +281,10 @@ final class Store {
 
     @discardableResult
     func newNote(in folder: Folder) -> Note {
+        if !folders.contains(folder) {
+            folders.append(folder)
+            saveFolders()
+        }
         let note = Note(title: "", body: "", folder: folder)
         notes.insert(note, at: 0)
         saveNote(note)
@@ -501,6 +514,10 @@ final class Store {
     private func saveFolders() { write(folders, to: foldersURL) }
 
     private func saveNote(_ note: Note) {
+        // A folder move or link change can happen while a typing save is
+        // queued. That older snapshot must not overwrite this newer value.
+        pendingSaves[note.id]?.cancel()
+        pendingSaves[note.id] = nil
         try? FileManager.default.createDirectory(at: notesDir, withIntermediateDirectories: true)
 
         let name = NoteFile.filename(for: note)
@@ -669,11 +686,26 @@ final class Store {
     /// Completing a task optionally writes it into today's log (:811).
     func setDone(taskId: UUID, done: Bool, autoLog: Bool) {
         guard let i = tasks.firstIndex(where: { $0.id == taskId }) else { return }
+        let wasDone = tasks[i].done
         tasks[i].done = done
-        tasks[i].completedAt = done ? Clock.now() : nil
+        tasks[i].completedAt = done ? (tasks[i].completedAt ?? Clock.now()) : nil
+        if done { tasks[i].workflow = .done }
+        else if tasks[i].workflow == .done { tasks[i].workflow = .todo }
         saveTasks()
-        if done && autoLog {
+        if done && !wasDone && autoLog {
             addLog(LogEntry(text: tasks[i].label, kind: .task))
+        }
+    }
+
+    func setWorkflow(taskId: UUID, status: TaskWorkflow, autoLog: Bool) {
+        guard let i = tasks.firstIndex(where: { $0.id == taskId }), tasks[i].workflowStatus != status else { return }
+        if status == .done {
+            setDone(taskId: taskId, done: true, autoLog: autoLog)
+        } else {
+            tasks[i].workflow = status
+            tasks[i].done = false
+            tasks[i].completedAt = nil
+            saveTasks()
         }
     }
 
@@ -732,6 +764,7 @@ final class Store {
         notes = archive.notes
         trash = archive.trash ?? []
         tasks = archive.tasks
+        if let attachments = archive.attachments { try? LibraryAttachments.restore(attachments, at: root) }
         log = archive.log
         milestones = archive.milestones
 
@@ -740,7 +773,7 @@ final class Store {
         // story one step further on: an archive predating user-made lanes has
         // only the lane named on each task, and `reconcileLanes` rebuilds the
         // board from those.
-        folders = archive.folders ?? Folder.starters
+        folders = archive.folders ?? [.scratch]
         lanes = archive.lanes ?? []
         reconcileFolders()
         reconcileLanes()

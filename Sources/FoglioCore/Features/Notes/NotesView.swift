@@ -13,6 +13,7 @@ struct NotesView: View {
     /// not because it can't be undone. One list rather than one note, because
     /// the same dialog confirms a whole selection.
     @State private var pendingDeletion: [Note] = []
+    @State private var showFolders = false
 
     /// The folder currently being named, or renamed — see `FolderEdit`.
     @State private var folderEdit: FolderEdit?
@@ -31,18 +32,26 @@ struct NotesView: View {
     }
 
     private var activeNote: Note? {
-        if let id = state.activeNoteId, let found = store.note(id: id) { return found }
+        if let id = state.activeNoteId, let found = visibleNotes.first(where: { $0.id == id }) { return found }
         return visibleNotes.first
     }
 
     var body: some View {
         HStack(spacing: 0) {
-            folderPane
-            Divider().overlay(theme.line)
+            if showFolders {
+                folderPane
+                Divider().overlay(theme.line)
+            }
             listPane
             Divider().overlay(theme.line)
             editorPane
         }
+        .onChange(of: state.folderFilter) { _, _ in reconcileSelection() }
+        .onChange(of: state.search) { _, _ in
+            state.endNoteSelection()
+            reconcileSelection()
+        }
+        .onChange(of: store.notes.map(\.id)) { _, _ in reconcileSelection() }
         .confirmationDialog(
             deletionTitle,
             isPresented: Binding(get: { !pendingDeletion.isEmpty }, set: { if !$0 { pendingDeletion = [] } }),
@@ -76,6 +85,13 @@ struct NotesView: View {
 
     private func title(of note: Note) -> String {
         note.title.isEmpty ? "Untitled note" : note.title
+    }
+
+    private func reconcileSelection() {
+        if !visibleNotes.contains(where: { $0.id == state.activeNoteId }) {
+            state.activeNoteId = visibleNotes.first?.id
+            state.activeBlock = nil
+        }
     }
 
     private func confirmDeletion() {
@@ -120,9 +136,8 @@ struct NotesView: View {
             newNoteButton
 
             HStack(spacing: 4) {
-                Text("FOLDERS")
-                    .font(Typo.sans(10))
-                    .kerning(1.6)
+                Text("Folders")
+                    .font(Typo.sans(11.5, .medium))
                     .foregroundStyle(theme.muted)
                 Spacer(minLength: 4)
                 Button {
@@ -192,6 +207,7 @@ struct NotesView: View {
 
     private var newNoteButton: some View {
         Button {
+            state.search = ""
             let note = store.newNote(in: state.folderFilter ?? .scratch)
             state.activeNoteId = note.id
             state.activeBlock = 0
@@ -251,7 +267,8 @@ struct NotesView: View {
     }
 
     private func commitFolderEdit() {
-        guard let edit = folderEdit else { return }
+        guard let edit = folderEdit,
+              !edit.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
         if let existing = edit.folder {
             store.renameFolder(existing, to: edit.text)
             // Follow the rename, so the pane doesn't jump back to All notes.
@@ -326,6 +343,16 @@ struct NotesView: View {
 
     private var listPane: some View {
         VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 10) {
+                Button { showFolders.toggle() } label: {
+                    Label("Folders", systemImage: "sidebar.left")
+                        .font(Typo.sans(11.5)).foregroundStyle(showFolders ? theme.accentDeep : theme.muted)
+                }
+                .buttonStyle(.flat).help("Show or hide folders")
+                Spacer(minLength: 0)
+                newNoteButton.fixedSize()
+            }
+            .padding(.horizontal, 14).padding(.top, 14)
             listHeader
 
             ScrollView {
@@ -340,16 +367,15 @@ struct NotesView: View {
                 selectionBar
             }
         }
-        .frame(width: 244)
+        .frame(width: 260)
         .frame(maxHeight: .infinity)
         .background(theme.bg)
     }
 
     private var listHeader: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(query.isEmpty ? (state.folderFilter?.label ?? "All notes").uppercased() : "SEARCH RESULTS")
-                .font(Typo.sans(10))
-                .kerning(1.6)
+            Text(query.isEmpty ? (state.folderFilter?.label ?? "All notes") : "Search results")
+                .font(Typo.sans(12, .medium))
                 .foregroundStyle(theme.muted)
                 .lineLimit(1)
             Spacer(minLength: 4)
@@ -360,9 +386,8 @@ struct NotesView: View {
                     state.selectingNotes = true
                 }
             } label: {
-                Text(state.selectingNotes ? "DONE" : "SELECT")
-                    .font(Typo.sans(10))
-                    .kerning(0.9)
+                Text(state.selectingNotes ? "Done" : "Select")
+                    .font(Typo.sans(11))
                     .foregroundStyle(state.selectingNotes ? theme.accentDeep : theme.muted)
                     .padding(.horizontal, 6).padding(.vertical, 2)
                     .hoverHighlight(theme, cornerRadius: 5)
@@ -551,13 +576,23 @@ struct NotesView: View {
     private var editorPane: some View {
         if let note = activeNote {
             NoteEditor(state: state, store: store, note: note, onDelete: { pendingDeletion = [note] })
+                .id(note.id)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(theme.bg)
         } else {
-            VStack {
-                Text(query.isEmpty ? "No notes yet." : "Nothing matches “\(query)”.")
-                    .font(Typo.sans(12.5))
-                    .foregroundStyle(theme.muted)
+            VStack(spacing: 12) {
+                Image(systemName: query.isEmpty ? "note.text" : "magnifyingglass")
+                    .font(.system(size: 30)).foregroundStyle(theme.muted)
+                Text(query.isEmpty ? "A place for your thoughts" : "No notes found")
+                    .font(Typo.sans(18, .medium)).foregroundStyle(theme.text)
+                Text(query.isEmpty ? "Create a note and start writing." : "Try another search or choose All notes.")
+                    .font(Typo.sans(12.5)).foregroundStyle(theme.muted)
+                if query.isEmpty {
+                    newNoteButton.frame(width: 150)
+                } else {
+                    Button("Clear search") { state.search = "" }
+                        .buttonStyle(.flat).foregroundStyle(theme.accentDeep)
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(theme.bg)

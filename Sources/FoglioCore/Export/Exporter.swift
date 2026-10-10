@@ -16,6 +16,7 @@ struct Archive: Codable, Equatable {
     /// lanes were user-made carry only the lane named on each task.
     var lanes: [Lane]?
     var tasks: [TaskItem] = []
+    var attachments: [String: Data]?
     var log: [LogEntry] = []
     var milestones: [Milestone] = []
 }
@@ -41,6 +42,7 @@ enum Exporter {
             folders: store.folders,
             lanes: store.lanes,
             tasks: store.tasks,
+            attachments: LibraryAttachments.snapshot(at: store.root),
             log: store.log,
             milestones: store.milestones
         )
@@ -55,9 +57,12 @@ enum Exporter {
         let fm = FileManager.default
         try fm.createDirectory(at: root.appendingPathComponent("notes"), withIntermediateDirectories: true)
         try fm.createDirectory(at: root.appendingPathComponent("log"), withIntermediateDirectories: true)
+        if let attachments = archive.attachments { try LibraryAttachments.restore(attachments, at: root) }
 
         for note in archive.notes {
-            try NoteFile.encode(note).write(
+            var readable = note
+            readable.body = readable.body.replacingOccurrences(of: "(attachments/", with: "(../attachments/")
+            try NoteFile.encode(readable).write(
                 to: root.appendingPathComponent("notes/\(NoteFile.filename(for: note))"),
                 atomically: true,
                 encoding: .utf8
@@ -132,8 +137,11 @@ enum Exporter {
             guard !open.isEmpty else { continue }
             out.append("## \(lane.label)")
             for task in open {
-                let meta = task.meta.isEmpty ? "" : " — _\(task.meta)_"
-                out.append("- [ ] \(task.label)\(meta)")
+                let rich = task.meta.contains("\n") || task.meta.range(of: #"[*_\x60\[\]|]|^>"#, options: .regularExpression) != nil
+                let meta = task.meta.isEmpty || rich ? "" : " — _\(task.meta)_"
+                let status = [.backlog, .inProgress].contains(task.workflowStatus) ? " _(\(task.workflowStatus.label))_" : ""
+                out.append("- [ ] \(task.label)\(status)\(meta)")
+                if rich { out += task.meta.components(separatedBy: "\n").map { "  " + $0 } }
             }
             out.append("")
         }
@@ -144,6 +152,7 @@ enum Exporter {
             for task in done {
                 let at = task.completedAt.map { " `\(Clock.hhmm($0))`" } ?? ""
                 out.append("- [x] \(task.label)\(at)")
+                if !task.meta.isEmpty { out += task.meta.components(separatedBy: "\n").map { "  " + $0 } }
             }
             out.append("")
         }

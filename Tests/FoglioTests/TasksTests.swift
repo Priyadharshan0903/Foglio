@@ -6,8 +6,7 @@ func tasksTests() {
     func freshStore() -> (Store, URL) {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("foglio-test-\(UUID().uuidString)")
-        let store = Store(root: root)
-        store.load()
+        let store = exampleStore(at: root)
         return (store, root)
     }
 
@@ -98,8 +97,7 @@ func laneTests() {
     func freshStore() -> (Store, URL) {
         let root = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("foglio-test-\(UUID().uuidString)")
-        let store = Store(root: root)
-        store.load()
+        let store = exampleStore(at: root)
         return (store, root)
     }
 
@@ -279,7 +277,7 @@ func laneTests() {
         let store = Store(root: root)
         store.load()
         Check.expect(store.lanes.contains(Lane("waiting")), "a lane known only to a task joins the board")
-        Check.equal(store.lanes.prefix(3).map(\.rawValue), Lane.starters.map(\.rawValue), "after the seeded three")
+        Check.equal(store.lanes, [Lane("To do"), Lane("waiting")], "legacy lists are recovered alongside the default list")
         Check.equal(store.tasks.count, 1, "and the task is still there")
     }
 

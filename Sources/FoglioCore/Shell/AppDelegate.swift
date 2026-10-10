@@ -122,6 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
 
     /// Bring the window forward on a given section.
     private func go(_ section: Section) {
+        if state.section != section { state.search = "" }
         state.section = section
         showMainWindow()
     }
@@ -131,16 +132,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func toggleQuickNote() {
         guard let bar else { return }
         quickNotePanel?.toggle(besides: bar.frame, pointerAt: bar.notesIconScreenCenter) { [weak self] in
-            self?.state.section = .notes
+            if let self, let note = self.store.note(id: self.state.quickNoteId) {
+                self.state.openNote(note, startWriting: true)
+            }
             self?.showMainWindow()
         }
     }
 
     /// ⌘⇧N — new note in Scratch (:1225).
     private func newScratchNote() {
-        let note = store.newNote(in: .scratch)
+        let note = store.newNote(in: state.folderFilter ?? .scratch)
+        state.search = ""
         state.section = .notes
-        state.folderFilter = .scratch
         state.activeNoteId = note.id
         state.activeBlock = 0
         showMainWindow()
@@ -219,6 +222,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     // whenever the window is up and comes back when it goes away.
 
     func windowWillClose(_ notification: Notification) {
+        store.flushPendingSaves()
         bar?.show()
     }
 
@@ -286,9 +290,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
             folder: .scratch
         )
         store.upsert(note)
-        state.section = .notes
-        state.activeNoteId = note.id
-        state.activeBlock = 1
+        state.openNote(note, startWriting: true)
         showMainWindow()
     }
 

@@ -9,8 +9,7 @@ func exportTests() {
         try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let store = Store(root: tmp.appendingPathComponent("store"))
-        store.load()
+        let store = exampleStore(at: tmp.appendingPathComponent("store"))
 
         guard let root = try? Exporter.export(Exporter.archive(from: store), to: tmp) else {
             Check.expect(false, "export threw")
@@ -73,8 +72,7 @@ func exportTests() {
         try? FileManager.default.createDirectory(at: tmp, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmp) }
 
-        let store = Store(root: tmp.appendingPathComponent("store"))
-        store.load()
+        let store = exampleStore(at: tmp.appendingPathComponent("store"))
         let seeded = store.notes.count
 
         store.replaceAll(with: Archive(notes: [Note(title: "Only me", body: "solo")]))

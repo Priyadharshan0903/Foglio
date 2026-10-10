@@ -8,13 +8,13 @@ enum Section: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .capture: "Quick capture"
+        case .capture: "Activity"
         case .notes: "Notes"
         case .tasks: "Tasks"
         case .calendar: "Calendar"
         case .settings: "Settings"
-        case .roadmap: "Roadmap"
-        case .week: "Weekly review"
+        case .roadmap: "Goals"
+        case .week: "This week"
         case .trash: "Trash"
         }
     }
@@ -35,11 +35,10 @@ enum Section: String, CaseIterable, Identifiable {
     /// The five that appear on the floating bar (`nav`, Day Log.dc.html:873).
     static let barItems: [Section] = [.capture, .notes, .tasks, .calendar, .settings]
 
-    /// The bar's five plus the three the rail adds (`railExtra`, :880).
-    ///
-    /// Trash sits at the end: it is somewhere you go to undo something, not
-    /// somewhere you work, so it shouldn't sit among the daily sections.
-    static let railItems: [Section] = barItems + [.roadmap, .week, .trash]
+    static let primaryItems: [Section] = [.notes, .tasks, .calendar]
+    static let moreItems: [Section] = [.capture, .roadmap, .week]
+    static let utilityItems: [Section] = [.trash, .settings]
+    static let railItems: [Section] = primaryItems + moreItems + utilityItems
 }
 
 /// Which screen edge the strip is docked to.
@@ -83,16 +82,9 @@ final class AppState {
     var folderFilter: Folder?
     var activeNoteId: UUID?
     var activeBlock: Int?
-    var moreOpen = false
-    var pinOpen = false
 
-    /// Whether the editor shows the note as one markdown document rather than
-    /// as a stack of blocks.
-    ///
-    /// Persisted, and app-wide rather than per-note: it isn't a property of a
-    /// note, it's how you like to write. Someone who wants a real text field —
-    /// selection that runs the length of the note, a caret that lands where
-    /// they clicked, one undo stack — wants it for the next note too.
+    /// Optional Markdown editing, available from the note's options menu.
+    /// The default editor is a continuous document in either mode.
     var sourceMode = false { didSet { defaults.set(sourceMode, forKey: "sourceMode") } }
 
     /// Notes ticked in the list, and whether the list is showing its
@@ -107,6 +99,17 @@ final class AppState {
     func endNoteSelection() {
         selectingNotes = false
         noteSelection = []
+    }
+
+    /// Entry points outside Notes must reveal the requested note even when
+    /// the previous Notes visit left a different folder or search selected.
+    func openNote(_ note: Note, startWriting: Bool = false) {
+        search = ""
+        folderFilter = note.folder
+        activeNoteId = note.id
+        activeBlock = startWriting ? 0 : nil
+        endNoteSelection()
+        section = .notes
     }
 
     /// The bar's always-there quick-notes note, found by this id rather than
@@ -125,6 +128,14 @@ final class AppState {
     // Quick capture / Tasks draft row (:695)
     var draft: String = ""
     var draftLane: Lane = .priority
+
+    var taskLayout: TaskLayout = .board {
+        didSet { defaults.set(taskLayout.rawValue, forKey: "taskLayout") }
+    }
+
+    var closeTaskOnOutsideClick: Bool = true {
+        didSet { defaults.set(closeTaskOnOutsideClick, forKey: "closeTaskOnOutsideClick") }
+    }
 
     /// Bumped to ask the window to put the caret in the search field (⌘K).
     var searchFocusRequests = 0
@@ -158,9 +169,14 @@ final class AppState {
 
     var theme: Theme { themeMode.theme }
 
-    private let defaults = UserDefaults.standard
+    private let defaults: UserDefaults
 
-    init() {
+    init(defaults: UserDefaults = .standard) {
+        self.defaults = defaults
+        taskLayout = TaskLayout(rawValue: defaults.string(forKey: "taskLayout") ?? "") ?? .board
+        if defaults.object(forKey: "closeTaskOnOutsideClick") != nil {
+            closeTaskOnOutsideClick = defaults.bool(forKey: "closeTaskOnOutsideClick")
+        }
         if let raw = defaults.string(forKey: "theme"), let m = ThemeMode(rawValue: raw) {
             themeMode = m
         }

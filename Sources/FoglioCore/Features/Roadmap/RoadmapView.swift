@@ -195,7 +195,7 @@ struct RoadmapView: View {
                 .foregroundStyle(theme.muted)
 
             if pinned.isEmpty {
-                Text("Nothing pinned yet — open a note and use the pin button under its title.")
+                Text("No linked notes yet. Open a note’s options and choose Link to a task or goal.")
                     .font(Typo.sans(12))
                     .foregroundStyle(theme.muted)
                     .lineSpacing(3)
@@ -205,9 +205,7 @@ struct RoadmapView: View {
                 VStack(spacing: 2) {
                     ForEach(pinned) { note in
                         Button {
-                            state.section = .notes
-                            state.activeNoteId = note.id
-                            state.activeBlock = nil
+                            state.openNote(note)
                         } label: {
                             VStack(alignment: .leading, spacing: 3) {
                                 Text(note.title.isEmpty ? "Untitled note" : note.title)
