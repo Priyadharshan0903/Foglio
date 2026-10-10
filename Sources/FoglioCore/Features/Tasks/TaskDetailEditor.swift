@@ -27,6 +27,7 @@ struct TaskDetailEditor: View {
     @State private var saveError: String?
     @State private var controller = NoteEditorController()
     @State private var confirmingClose = false
+    @State private var datePickerPresented = false
     @FocusState private var nameFocused: Bool
     @FocusState private var cardFocused: Bool
 
@@ -88,7 +89,7 @@ struct TaskDetailEditor: View {
         .frame(width: size.width, height: size.height).background(theme.surface).tint(theme.accentDeep)
         .focusable().focused($cardFocused).focusEffectDisabled().defaultFocus($cardFocused, !isNew)
         .background {
-            TaskOutsideClickMonitor(enabled: closeOnOutsideClick && !confirmingClose, onOutside: requestClose)
+            TaskOutsideClickMonitor(enabled: closeOnOutsideClick && !confirmingClose && !datePickerPresented, onOutside: requestClose)
                 .allowsHitTesting(false).accessibilityHidden(true)
         }
         .interactiveDismissDisabled()
@@ -160,10 +161,12 @@ struct TaskDetailEditor: View {
                     }
                 }
                 property("Due date") {
-                    Toggle("Set due date", isOn: $hasDueDate).toggleStyle(.checkbox)
-                    if hasDueDate {
-                        DatePicker("Due date", selection: $dueDate, displayedComponents: .date).labelsHidden().datePickerStyle(.field)
-                    }
+                    ThemedDatePicker(selection: Binding(
+                        get: { hasDueDate ? dueDate : nil },
+                        set: { value in
+                            hasDueDate = value != nil
+                            if let value { dueDate = value }
+                        }), isPresented: $datePickerPresented, theme: theme)
                 }
                 property("Estimate") {
                     Stepper(value: $estimate, in: 0...100) {
