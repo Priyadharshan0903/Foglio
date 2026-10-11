@@ -56,7 +56,7 @@ func renderTaskPreviewsIfRequested() {
         render("date-picker-" + mode.rawValue, width: 292, height: 378,
                content: ThemedDateCalendar(selection: .constant(previewDate), theme: mode.theme,
                                            today: previewToday, onClose: {}))
-        render("drag-feedback-" + mode.rawValue, width: 344, height: 460,
+        render("drag-feedback-" + mode.rawValue, width: 344, height: 540,
                content: TaskDragFeedbackPreview(theme: mode.theme))
     }
     print("Task previews saved to \(path)")
@@ -73,12 +73,13 @@ private struct TaskDragFeedbackPreview: View {
                 Label("To do", systemImage: "circle").font(Typo.sans(13, .semibold)).foregroundStyle(theme.text)
                     .frame(height: 32)
                 sampleCard("FOG-12", "Prepare the welcome page")
+                TaskDropPlaceholder(height: 120, theme: theme)
                 sampleCard("FOG-15", "Review the launch checklist")
                 Spacer(minLength: 0)
             }
-            .padding(12).frame(width: 320, height: 396, alignment: .topLeading)
-            .modifier(TaskColumnDropDecoration(active: true, insertionY: 176, theme: theme))
-        }.frame(width: 344, height: 460).background(theme.bg)
+            .padding(12).frame(width: 320, height: 480, alignment: .topLeading)
+            .modifier(TaskColumnDropDecoration(active: true, insertionY: 177, theme: theme))
+        }.frame(width: 344, height: 540).background(theme.bg)
     }
     private func sampleCard(_ ticket: String, _ title: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {

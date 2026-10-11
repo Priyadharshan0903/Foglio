@@ -49,4 +49,43 @@ func taskDragFeedbackTests() {
         Check.expect(feedback.sourceID == nil && feedback.location == nil && feedback.placement == nil,
                      "leaving, dropping, and cancelling clear both feedback cues")
     }
+
+    Check.suite("Task dragging — temporary card slots and reflow stability") {
+        let a = UUID(), source = UUID(), b = UUID(), c = UUID()
+        let ids = [a, source, b, c]
+        Check.equal(TaskLaneDragLayout.index(taskIDs: ids, sourceID: source, placement: nil, restoringSource: true), 1,
+                    "lifting reserves the source card's original position")
+        Check.equal(TaskLaneDragLayout.index(taskIDs: ids, sourceID: source,
+                    placement: TaskDropPlacement(anchorID: c, after: true)), 3, "dragging to the end reserves the last slot")
+        let afterA = TaskLaneDragLayout.index(taskIDs: ids, sourceID: source, placement: TaskDropPlacement(anchorID: a, after: true))
+        let beforeB = TaskLaneDragLayout.index(taskIDs: ids, sourceID: source, placement: TaskDropPlacement(anchorID: b, after: false))
+        Check.equal(afterA, beforeB, "both sides of a gap describe one stable slot")
+        Check.equal(TaskLaneDragLayout.placement(at: afterA, taskIDs: ids, sourceID: source),
+                    TaskDropPlacement(anchorID: b, after: false), "equivalent slots normalize before notifying the board")
+        Check.expect(TaskLaneDragLayout.placement(at: 0, taskIDs: [source], sourceID: source) == nil,
+                     "a lane with only its source card does not invent a self anchor")
+        Check.equal(TaskLaneDragLayout.index(taskIDs: [], sourceID: source, placement: nil), 0,
+                    "an empty destination has an initial slot")
+        var feedback = TaskColumnDragState()
+        let initial = [a: CGRect(x: 12, y: 52, width: 276, height: 100),
+                       b: CGRect(x: 12, y: 160, width: 276, height: 100)]
+        feedback.update(sourceID: source, location: CGPoint(x: 80, y: 130), taskIDs: ids, frames: initial)
+        let selected = feedback.placement
+        let gap = CGRect(x: 12, y: 160, width: 276, height: 120)
+        let shifted = [a: initial[a]!, b: initial[b]!.offsetBy(dx: 0, dy: 128),
+                       c: CGRect(x: 12, y: 396, width: 276, height: 100)]
+        for y in [CGFloat(162), 220, 278] {
+            feedback.update(sourceID: source, location: CGPoint(x: 80, y: y), taskIDs: ids, frames: shifted, placeholder: gap)
+            Check.equal(feedback.placement, selected, "cards moving around the placeholder cannot bounce the selected slot")
+        }
+        feedback.update(sourceID: source, location: CGPoint(x: 80, y: 370), taskIDs: ids, frames: shifted, placeholder: gap)
+        Check.equal(feedback.placement, TaskDropPlacement(anchorID: b, after: true), "moving past the next card advances the slot")
+        feedback.clear()
+        Check.expect(feedback.placement == nil, "cancelling removes the projected slot without a stored order")
+        Check.equal(feedback.indicatorY(frames: shifted, emptyY: 52,
+                    viewport: CGRect(x: 8, y: 48, width: 284, height: 240),
+                    placeholder: gap.offsetBy(dx: 0, dy: -200)), 50,
+                    "the placeholder's line stays below the header when scrolled out of view")
+        Check.equal(ids, [a, source, b, c], "preview calculations leave the original task order intact")
+    }
 }

@@ -14,6 +14,7 @@ MainActor.assumeIsolated { taskWorkflowTests() }
 MainActor.assumeIsolated { taskWorkspaceTests() }
 MainActor.assumeIsolated { taskOrderingTests() }
 taskDragFeedbackTests()
+MainActor.assumeIsolated { taskDragScrollTests() }
 MainActor.assumeIsolated { taskEditorTests() }
 MainActor.assumeIsolated { attachmentTests() }
 sourceModeTests()

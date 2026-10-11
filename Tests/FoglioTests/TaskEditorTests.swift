@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 @testable import FoglioCore
 
 @MainActor
@@ -10,6 +11,8 @@ func taskEditorTests() {
         var opens = 0
         var activeDrag: UUID?
         card.onDragChanged = { activeDrag = $0 }
+        var liftedSize: CGSize?
+        card.onLift = { liftedSize = $0 }
         card.onOpen = { opens += 1 }
         func event(_ type: NSEvent.EventType, _ point: NSPoint) -> NSEvent {
             NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0,
@@ -36,6 +39,7 @@ func taskEditorTests() {
         for operation in [NSDragOperation.move, []] {
             card.mouseDown(with: down)
             card.draggingSession(session, willBeginAt: .zero)
+            Check.equal(liftedSize, card.bounds.size, "lifting provides the actual card dimensions for its placeholder")
             Check.equal(activeDrag, id, "destinations receive the native drag source identity")
             Check.expect(card.isDragging, "starting a drag switches to the grabbing state")
             card.mouseUp(with: up)
@@ -46,6 +50,79 @@ func taskEditorTests() {
             Check.expect(!card.isGrabbed, "ending or cancelling a drag releases the grab cursor")
             card.mouseUp(with: up)
             Check.equal(opens, 1, "the release after a finished drag cannot open the editor")
+        }
+    }
+
+    Check.suite("Task dragging — full-size Retina preview") {
+        let size = CGSize(width: 280, height: 160)
+        let bitmap = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: 560, pixelsHigh: 320,
+                                      bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true,
+                                      isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0)!
+        let preview = TaskCardDragImage.make(bitmap: bitmap, size: size)
+        Check.equal(bitmap.size, size, "Retina pixel dimensions do not resize the lifted card")
+        let frame = TaskCardDragImage.frame(for: CGRect(origin: .zero, size: size))
+        Check.equal(preview.size, frame.size, "the native image and drag frame use identical point dimensions")
+        Check.equal(frame.insetBy(dx: TaskCardDragImage.margin, dy: TaskCardDragImage.margin),
+                    CGRect(origin: .zero, size: size), "shadow padding preserves the card's position under the cursor")
+    }
+
+    Check.suite("Task board — native source survives placeholder and cancellation") {
+        let root = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("foglio-drag-lifecycle-\(UUID())")
+        let suite = "FoglioDragLifecycle-\(UUID())"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { try? FileManager.default.removeItem(at: root); defaults.removePersistentDomain(forName: suite) }
+        let store = Store(root: root); store.load()
+        store.addTask(TaskItem(label: "Review the launch checklist", lane: .priority))
+        store.addTask(TaskItem(label: "Prepare the welcome page", lane: .priority))
+        let state = AppState(defaults: defaults)
+        state.section = .tasks; state.taskLayout = .board; state.themeMode = .ember
+        let host = NSHostingView(rootView: TasksView(state: state, store: store))
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 1400, height: 780),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = host
+        defer { window.close() }
+        func settle() {
+            host.layoutSubtreeIfNeeded()
+            RunLoop.main.run(until: Date().addingTimeInterval(0.25))
+            host.layoutSubtreeIfNeeded()
+        }
+        func sources(_ view: NSView) -> [TaskCardDragView] {
+            (view as? TaskCardDragView).map { [$0] } ?? view.subviews.flatMap { sources($0) }
+        }
+        settle()
+        let order = store.manuallyOrderedTasks.map(\.id)
+        let source = sources(host).first { $0.taskID == order.first }
+        Check.expect(source != nil, "the real board mounts a native source for the fictional task")
+        if let source {
+            let size = source.bounds.size
+            Check.expect(size.width > 100 && size.height > 40, "the lifted source has its actual card dimensions")
+            if let path = ProcessInfo.processInfo.environment["FOGLIO_TASK_PREVIEWS"],
+               let bitmap = host.bitmapImageRepForCachingDisplay(in: source.convert(source.bounds, to: host)) {
+                host.cacheDisplay(in: source.convert(source.bounds, to: host), to: bitmap)
+                let image = TaskCardDragImage.make(bitmap: bitmap, size: size)
+                if let data = image.tiffRepresentation, let png = NSBitmapImageRep(data: data)?.representation(using: .png, properties: [:]) {
+                    try! FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+                    try! png.write(to: URL(fileURLWithPath: path).appendingPathComponent("native-drag-card-ember.png"))
+                }
+            }
+            let session = NSDraggingSession()
+            source.draggingSession(session, willBeginAt: .zero)
+            settle()
+            Check.expect(sources(host).contains { $0 === source }, "reflow retains the original native drag source until the session ends")
+            Check.equal(store.manuallyOrderedTasks.map(\.id), order, "lifting and reserving a slot do not save an order change")
+            if let path = ProcessInfo.processInfo.environment["FOGLIO_TASK_PREVIEWS"],
+               let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
+                try! FileManager.default.createDirectory(atPath: path, withIntermediateDirectories: true)
+                host.cacheDisplay(in: host.bounds, to: bitmap)
+                try! bitmap.representation(using: .png, properties: [:])!.write(to:
+                    URL(fileURLWithPath: path).appendingPathComponent("native-lift-ember.png"))
+            }
+            source.draggingSession(session, endedAt: .zero, operation: [])
+            settle()
+            Check.expect(!source.isDragging, "cancelling completes the source lifecycle")
+            Check.equal(sources(host).first { $0.taskID == source.taskID }?.bounds.size, size,
+                        "cancelling restores the full card at its original size")
+            Check.equal(store.manuallyOrderedTasks.map(\.id), order, "cancelling leaves persisted ordering untouched")
         }
     }
 

@@ -8,12 +8,14 @@ struct TaskCardDragSource: NSViewRepresentable {
     let taskID: UUID
     let onOpen: () -> Void
     var onDragChanged: (UUID?) -> Void = { _ in }
+    var onLift: (CGSize) -> Void = { _ in }
 
     func makeNSView(context: Context) -> TaskCardDragView {
         let view = TaskCardDragView()
         view.taskID = taskID
         view.onOpen = onOpen
         view.onDragChanged = onDragChanged
+        view.onLift = onLift
         return view
     }
 
@@ -21,6 +23,7 @@ struct TaskCardDragSource: NSViewRepresentable {
         view.taskID = taskID
         view.onOpen = onOpen
         view.onDragChanged = onDragChanged
+        view.onLift = onLift
     }
 }
 
@@ -28,6 +31,7 @@ final class TaskCardDragView: NSView, NSDraggingSource {
     var taskID = UUID()
     var onOpen: () -> Void = {}
     var onDragChanged: (UUID?) -> Void = { _ in }
+    var onLift: (CGSize) -> Void = { _ in }
     private var pressPoint: NSPoint?
     private(set) var isDragging = false
     var isGrabbed: Bool { isDragging || pressPoint != nil }
@@ -74,13 +78,13 @@ final class TaskCardDragView: NSView, NSDraggingSource {
         guard let root = window?.contentView,
               let bitmap = root.bitmapImageRepForCachingDisplay(in: convert(bounds, to: root)) else { return }
         root.cacheDisplay(in: convert(bounds, to: root), to: bitmap)
-        let image = NSImage(size: bounds.size)
-        image.addRepresentation(bitmap)
+        let image = TaskCardDragImage.make(bitmap: bitmap, size: bounds.size)
         let item = NSDraggingItem(pasteboardWriter: pasteboardItem())
-        item.setDraggingFrame(bounds, contents: image)
+        item.setDraggingFrame(TaskCardDragImage.frame(for: bounds), contents: image)
         isDragging = true
         updateCursor()
         let session = beginDraggingSession(with: [item], event: event, source: self)
+        session.draggingFormation = .none
         session.animatesToStartingPositionsOnCancelOrFail = true
     }
 
@@ -112,6 +116,7 @@ final class TaskCardDragView: NSView, NSDraggingSource {
 
     func draggingSession(_ session: NSDraggingSession, willBeginAt screenPoint: NSPoint) {
         isDragging = true
+        onLift(bounds.size)
         onDragChanged(taskID)
         updateCursor()
     }
@@ -129,4 +134,30 @@ final class TaskCardDragView: NSView, NSDraggingSource {
     }
 
     func ignoreModifierKeys(for session: NSDraggingSession) -> Bool { true }
+}
+
+enum TaskCardDragImage {
+    static let margin: CGFloat = 10
+    static func frame(for bounds: CGRect) -> CGRect { bounds.insetBy(dx: -margin, dy: -margin) }
+
+    static func make(bitmap: NSBitmapImageRep, size: CGSize) -> NSImage {
+        // Bitmap pixels may be 2x the point size on Retina displays. Explicit
+        // logical dimensions keep AppKit's preview at the original card size.
+        bitmap.size = size
+        let card = NSImage(size: size)
+        card.addRepresentation(bitmap)
+        card.size = size
+        let previewSize = CGSize(width: size.width + margin * 2, height: size.height + margin * 2)
+        return NSImage(size: previewSize, flipped: false) { rect in
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.24)
+            shadow.shadowBlurRadius = 7
+            shadow.shadowOffset = CGSize(width: 0, height: -2)
+            NSGraphicsContext.saveGraphicsState()
+            shadow.set()
+            card.draw(in: rect.insetBy(dx: margin, dy: margin))
+            NSGraphicsContext.restoreGraphicsState()
+            return true
+        }
+    }
 }
