@@ -2,6 +2,8 @@
 
 These are native SwiftUI snapshots from the opt-in test preview renderers. They use fictional notes and tasks, temporary libraries, and isolated preferences. The agent connection state is an example; no agent server is started by that preview.
 
+`FOGLIO_TASK_PREVIEWS` also emits `drag-feedback-<theme>.png` for all eight palettes. These render the actual lane-highlight/insertion-line decoration with simulated hover state and fictional cards; they verify appearance, not live mouse dragging. The existing board screenshots show the normal resting state.
+
 | Image | Renderer | Content |
 | --- | --- | --- |
 | `tasks-board.png` | `Tests/FoglioTests/TaskPreviews.swift` | Ember board with ticket IDs, a custom In review status, priorities, projects, labels, estimates, subtasks, and blockers. |

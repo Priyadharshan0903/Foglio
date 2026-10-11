@@ -25,6 +25,8 @@ The section explains reading by default, the Allow changes switch, local stdio/s
 
 Task copy covers saved ordering within columns as well as moves between stages. `tasks_list` returns manual order; `task_move` supports `before_id` / `after_id` with an `order_revision` for conflict protection. These extend existing tools, so the inventory stays at 26. Follow the repository's [AGENTS.md](../AGENTS.md) change workflow to keep app behavior, connector schemas, website, documentation, screenshots, and release artifacts aligned.
 
+The board's placement guide combines a theme-colored lane highlight and insertion line throughout a drag, including gaps between cards. This is presentation feedback; connector ordering arguments are unchanged.
+
 ## Images and motion
 
 All assets live in [assets](assets/). See [the asset guide](assets/ASSETS.md) for composition, provenance, accessibility, and animation guidance. Full generation prompts are in [prompts.json](assets/prompts.json).

@@ -56,6 +56,37 @@ func renderTaskPreviewsIfRequested() {
         render("date-picker-" + mode.rawValue, width: 292, height: 378,
                content: ThemedDateCalendar(selection: .constant(previewDate), theme: mode.theme,
                                            today: previewToday, onClose: {}))
+        render("drag-feedback-" + mode.rawValue, width: 344, height: 460,
+               content: TaskDragFeedbackPreview(theme: mode.theme))
     }
     print("Task previews saved to \(path)")
+}
+
+/// Actual drag decorations with simulated hover feedback and fictional cards.
+/// This checks theme/placement rendering, not a live native drag session.
+private struct TaskDragFeedbackPreview: View {
+    let theme: Theme
+    var body: some View {
+        VStack(spacing: 12) {
+            Text("Same-lane drag feedback").font(Typo.sans(12)).foregroundStyle(theme.muted)
+            VStack(alignment: .leading, spacing: 8) {
+                Label("To do", systemImage: "circle").font(Typo.sans(13, .semibold)).foregroundStyle(theme.text)
+                    .frame(height: 32)
+                sampleCard("FOG-12", "Prepare the welcome page")
+                sampleCard("FOG-15", "Review the launch checklist")
+                Spacer(minLength: 0)
+            }
+            .padding(12).frame(width: 320, height: 396, alignment: .topLeading)
+            .modifier(TaskColumnDropDecoration(active: true, insertionY: 176, theme: theme))
+        }.frame(width: 344, height: 460).background(theme.bg)
+    }
+    private func sampleCard(_ ticket: String, _ title: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(ticket).font(Typo.mono(10.5)).foregroundStyle(theme.muted)
+            Text(title).font(Typo.sans(13, .medium)).foregroundStyle(theme.text)
+            Label("Studio launch", systemImage: "square.stack").font(Typo.sans(11)).foregroundStyle(theme.muted)
+        }.padding(12).frame(maxWidth: .infinity, minHeight: 120, maxHeight: 120, alignment: .topLeading)
+            .background(theme.surface).clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(theme.line, lineWidth: 1))
+    }
 }
