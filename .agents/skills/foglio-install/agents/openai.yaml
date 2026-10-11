@@ -1,0 +1,4 @@
+interface:
+  display_name: "Update Foglio"
+  short_description: "Build and replace Foglio with a verified backup"
+  default_prompt: "Use $foglio-install to build the latest DMG and replace my installed Foglio app."
