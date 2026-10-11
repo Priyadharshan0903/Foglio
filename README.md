@@ -35,6 +35,8 @@ make dmg
 
 The DMG is written to `build/Foglio-0.5.0.dmg`. The installer replaces `~/Applications/Foglio.app` and keeps the previous app as a backup. This is a locally signed preview, rather than a notarized public release.
 
+To build, refresh the website download, and replace your installed copy in one command, run `make update-app`. Agents can follow the portable [foglio-install skill](.agents/skills/foglio-install/SKILL.md), also linked in `AGENTS.md`. Its canonical source lives in `.agents/skills`; `.claude/skills` links the same skill for Claude Code. Other agents can read that file or run the Make command directly, regardless of model.
+
 For development, use `make build`, `make app`, or `make test`. The tests run as the `FoglioTests` executable; see [Package.swift](Package.swift) for the Command Line Tools testing limitation.
 
 The [landing page](website/README.md) provides the app preview and downloadable DMG:

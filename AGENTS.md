@@ -54,6 +54,13 @@ landing page. Keep these surfaces consistent when implementing a change.
 
 ## Packaging and handoff
 
+- For requests such as "swap the new DMG" or "update Foglio in Applications", use
+  the repository's [foglio-install skill](.agents/skills/foglio-install/SKILL.md).
+  `make update-app` builds the release, refreshes website downloads, and installs
+  with a backup. Restricted agents can split `make prepare-update` from
+  `make install-built` for native filesystem approval. These commands work with
+  any agent that has terminal access; no model-specific tools are required.
+
 - Keep website work in this repository unless asked to publish. Do not push,
   publish, or replace an installed app unless authorized by the user.
 - When asked for a downloadable release, use `./scripts/dmg.sh release`

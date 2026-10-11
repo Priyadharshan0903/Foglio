@@ -1,4 +1,4 @@
-.PHONY: build run test mcp bundle app dmg install clean
+.PHONY: build run test mcp bundle app dmg install prepare-update install-built update-app clean
 
 build:
 	swift build
@@ -31,6 +31,21 @@ dmg:
 # /Applications is writable only by the admin group, ~/Applications by you.
 install: dmg
 	@./scripts/install.sh
+
+# Prepare all artifacts before an agent requests filesystem permission to install.
+prepare-update: dmg
+	@npm --prefix website run build
+
+# Use the bundle just packaged by prepare-update; no DMG mounting is needed.
+install-built:
+	@./scripts/install.sh build/Foglio.app
+	@cmp build/Foglio.app/Contents/MacOS/Foglio "$(HOME)/Applications/Foglio.app/Contents/MacOS/Foglio"
+	@cmp build/Foglio.app/Contents/MacOS/FoglioMCP "$(HOME)/Applications/Foglio.app/Contents/MacOS/FoglioMCP"
+	@echo "Installed app and MCP helper match the prepared build."
+
+# Portable entrypoint for people and agents; sequential even with make -j.
+update-app: prepare-update
+	@$(MAKE) install-built
 
 clean:
 	rm -rf .build build

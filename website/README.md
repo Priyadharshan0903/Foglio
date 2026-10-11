@@ -41,6 +41,8 @@ App previews contain fictional example content from an isolated library, not per
 
 ## Update the download
 
+From the repository root, `make update-app` builds a fresh DMG, refreshes this website's download/checksum, and replaces `~/Applications/Foglio.app` with a backup. For preparing artifacts without installing, use `make prepare-update`. Agents can follow the model-independent [foglio-install skill](../.agents/skills/foglio-install/SKILL.md), linked from `AGENTS.md`.
+
 1. Build the new release with the repository's `scripts/dmg.sh`.
 2. Update `release.json` to match that artifact's version and filename.
 3. Run `npm run build`.

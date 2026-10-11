@@ -101,6 +101,8 @@ There are no deletion, arbitrary-file, shell-execution, or calendar-account conf
 
 ## Build and verify
 
+To build the latest DMG and replace the local app and MCP helper together, run `make update-app` from the repository root. The installer keeps a backup and preserves your library. The reusable [foglio-install skill](../.agents/skills/foglio-install/SKILL.md) works with any agent that can run shell commands. Reopen Foglio and reconnect your MCP client after updating to discover changed tools or arguments.
+
 The ordinary `scripts/bundle.sh` and `scripts/dmg.sh` include `FoglioMCP` inside the app and sign it along with the bundle. To build and check from the repository root in a restricted runner:
 
 ```sh
