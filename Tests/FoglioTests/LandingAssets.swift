@@ -19,7 +19,7 @@ func renderLandingAssetsIfRequested() {
     }
     let state = AppState(defaults: defaults)
     let store = Store(root: root); store.load()
-    let calendar = CalendarSource()
+    let calendar = CalendarSource(defaults: defaults, cacheRoot: root.appendingPathComponent("calendar"))
     let note = Note(title: "A little room to think", body: """
     Every good day starts with a little space.
 
@@ -79,9 +79,12 @@ func renderLandingAssetsIfRequested() {
     }
     state.section = .tasks; state.themeMode = .ember
     render("tasks-ember", content: MainWindowView(state: state, store: store, calendar: calendar))
+    let editorTask = TaskItem(label: "Design the welcome page", lane: work,
+                                                   meta: "## Start with the essentials\nA **clear idea**, a little _personality_, and room to breathe.\n\n- [x] Find the direction\n- [ ] Refine the details\n- [ ] Share the first version\n\n> Small things, done thoughtfully.\n\n| Detail | Next step |\n| --- | --- |\n| Writing | Keep it clear |\n| Design | Make room |", workflow: .inProgress,
+                                                   priority: .high, project: "Studio launch", labels: ["Design"], estimate: 3)
+    store.addTask(editorTask)
     render("editor-ember", width: 1080, height: 800,
-           content: TaskDetailEditor(task: TaskItem(label: "Design the welcome page", lane: work,
-                                                   meta: "## Start with the essentials\nA **clear idea**, a little _personality_, and room to breathe.\n\n- [x] Find the direction\n- [ ] Refine the details\n- [ ] Share the first version\n\n> Small things, done thoughtfully.\n\n| Detail | Next step |\n| --- | --- |\n| Writing | Keep it clear |\n| Design | Make room |", workflow: .inProgress),
+           content: TaskDetailEditor(task: store.tasks.first { $0.id == editorTask.id }!,
                                      isNew: false, store: store, theme: .ember, autoLog: false, onClose: {}, onDelete: {}))
     print("Landing-page screenshots saved to \(path)")
 }

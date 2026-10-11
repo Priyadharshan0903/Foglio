@@ -46,7 +46,7 @@ func renderTaskPreviewsIfRequested() {
     }
     for mode in [ThemeMode.ember, .harbor] {
         state.themeMode = mode
-        render("board-" + mode.rawValue, width: 1600, height: 940, content: MainWindowView(state: state, store: store, calendar: calendar))
+        render("board-" + mode.rawValue, width: 1840, height: 940, content: MainWindowView(state: state, store: store, calendar: calendar))
         render("editor-" + mode.rawValue, width: 1080, height: 800, content: TaskDetailEditor(task: updated, isNew: false, store: store, theme: mode.theme, autoLog: false, onClose: {}, onDelete: {}))
     }
     render("statuses", width: 600, height: 620, content: TaskStatusManager(store: store, theme: .ember))

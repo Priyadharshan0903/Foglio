@@ -5,9 +5,9 @@ Foglio includes a local MCP stdio server for Codex, Claude Code, and Claude Desk
 ## Start using it
 
 1. Install or open the updated **Foglio 0.5.0** app.
-2. In **Settings → Agent connections**, turn on **Allow agents to connect**. Access starts with reading only.
-3. Turn on **Allow agents to make changes** when you want agents to add or edit content.
-4. Use **Copy Codex setup**, **Copy Claude Code setup**, or **Copy Claude Desktop config**. The button briefly shows **Copied** to confirm. These copy configuration for the app you are currently running; changing your theme or normal app settings is not required.
+2. In **Settings → Agent connections**, turn on **Allow connections**. Access starts with reading only.
+3. Turn on **Allow changes** when you want agents to add or edit content.
+4. Use the **Copy setup** button beside **Codex**, **Claude Code**, or **Claude Desktop**. The button briefly shows **Copied** to confirm. These copy configuration for the app you are currently running; changing your theme or normal app settings is not required.
 
 Keep Foglio open while using the connector. Turning access off closes the endpoint and revokes pending requests. Permissions apply to all connected local agents. Local processes belonging to your macOS user can use the endpoint; this is not an authentication boundary between applications on the same account.
 
@@ -38,6 +38,8 @@ Merge the JSON copied from Foglio Settings into your existing `mcpServers` objec
 Source: [MCP local-server setup guide](https://modelcontextprotocol.io/docs/develop/connect-local-servers).
 
 ## Available tools
+
+Foglio exposes **26 tools**. The complete per-tool description and read/write inventory is also in the [main README](../README.md#all-26-connector-tools).
 
 | Area | Tools |
 | --- | --- |
