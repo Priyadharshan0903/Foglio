@@ -10,7 +10,6 @@ struct TasksView: View {
     @FocusState private var laneFieldFocused: Bool
     @State private var pendingLaneDeletion: Lane?
     @State private var deletedTask: TaskItem?
-    @State private var dropTarget: String?
     @State private var draggedTaskID: UUID?
     @State private var managingStatuses = false
     @State private var selectedProject: String?
@@ -187,23 +186,13 @@ struct TasksView: View {
                     }.buttonStyle(.flat)
                 }.padding(4)
             }
+            .anchorPreference(key: TaskColumnViewportKey.self, value: .bounds) { $0 }
         }
         .padding(8).frame(width: width, height: max(180, height), alignment: .topLeading)
-        .background(dropTarget == workflow.id ? theme.accentSoft : theme.field.opacity(0.5))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(dropTarget == workflow.id ? theme.accentDeep : .clear, lineWidth: 1))
-        .dropDestination(for: String.self) { items, _ in
-            let ids = items.compactMap { value -> UUID? in
-                guard value.hasPrefix("foglio-task:") else { return nil }
-                return UUID(uuidString: String(value.dropFirst("foglio-task:".count)))
-            }.filter { id in store.tasks.contains { $0.id == id } }
-            for id in ids {
-                if store.placeTask(taskId: id, statusID: workflow.id, autoLog: state.autoLog) { sort = .manual }
-            }
-            return !ids.isEmpty
-        } isTargeted: { targeted in
-            if targeted { dropTarget = workflow.id } else if dropTarget == workflow.id { dropTarget = nil }
-        }
+        .modifier(TaskColumnDropTarget(taskIDs: tasks.map(\.id), draggedID: draggedTaskID, theme: theme) { id, placement in
+            if store.placeTask(taskId: id, statusID: workflow.id, relativeTo: placement?.anchorID,
+                               after: placement?.after ?? false, autoLog: state.autoLog) { sort = .manual }
+        })
     }
 
     private func card(_ task: TaskItem) -> some View {
@@ -268,13 +257,11 @@ struct TasksView: View {
         }.buttonStyle(.flat)
             .overlay {
                 TaskCardDragSource(taskID: task.id, onOpen: { taskEdit = TaskPresentation(task: task, isNew: false) },
-                                   onDragChanged: { draggedTaskID = $0; if $0 == nil { dropTarget = nil } })
+                                   onDragChanged: { draggedTaskID = $0 })
                     .accessibilityHidden(true)
             }
             .contextMenu { taskActions(task) }.help("Open \(task.label)")
-            .modifier(TaskInsertionTarget(taskID: task.id, draggedID: draggedTaskID, theme: theme) { id, after in
-                place(id, beside: task, after: after)
-            })
+            .anchorPreference(key: TaskCardBoundsKey.self, value: .bounds) { [task.id: $0] }
     }
 
     private var list: some View {

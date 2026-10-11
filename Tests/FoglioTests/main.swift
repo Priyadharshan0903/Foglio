@@ -13,6 +13,7 @@ MainActor.assumeIsolated { richEditorTests() }
 MainActor.assumeIsolated { taskWorkflowTests() }
 MainActor.assumeIsolated { taskWorkspaceTests() }
 MainActor.assumeIsolated { taskOrderingTests() }
+taskDragFeedbackTests()
 MainActor.assumeIsolated { taskEditorTests() }
 MainActor.assumeIsolated { attachmentTests() }
 sourceModeTests()
