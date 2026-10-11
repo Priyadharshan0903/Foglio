@@ -19,7 +19,7 @@ Write in a familiar editor, organize tasks on a board or list, and turn meetings
 </table>
 
 - **Notes:** rich text, headings, numbered and unordered lists, circular checklists, quotes, code, tables, links, and attachments. Markdown files remain readable outside Foglio.
-- **Tasks:** board and list views, drag and drop, custom statuses, stable `FOG-42` ticket IDs, priorities, projects, assignees, labels, due dates, estimates, subtasks, and blocking relationships.
+- **Tasks:** board and list views, drag between or within status columns with saved manual ordering, custom statuses, stable `FOG-42` ticket IDs, priorities, projects, assignees, labels, due dates, estimates, subtasks, and blocking relationships.
 - **Calendar:** read from macOS Calendar, a calendar URL, or an `.ics` file. Create a meeting note or a follow-up task without leaving the workspace.
 - **Make it yours:** eight palettes, a themed date picker, a floating bar, quick capture, and focused Settings pages.
 - **Take your work with you:** export readable Markdown and a restorable archive with attachments. Import asks before replacing your library.
@@ -88,11 +88,11 @@ Read tools work with connection access enabled. Write tools also require **Allow
 | `task_status_update` | Rename or reorder a status while keeping its ID. | Write |
 | `task_lists` | List task lists, independently of board statuses. | Read |
 | `task_list_create` | Create a task list. | Write |
-| `tasks_list` | Search tasks and filter by list, status, project, or priority. | Read |
+| `tasks_list` | Search tasks in saved manual order and filter by list, status, project, or priority. | Read |
 | `task_get` | Read a task and its revision by UUID or ticket ID. | Read |
 | `task_create` | Create a task with its description and properties. | Write |
 | `task_update` | Edit task content, properties, or relationships. | Write |
-| `task_move` | Move a task between lists or board statuses. | Write |
+| `task_move` | Move a task between lists/statuses or place it before/after another card. | Write |
 | `note_folders` | List note folders and their note counts. | Read |
 | `note_folder_create` | Create a note folder. | Write |
 | `notes_list` | Search notes by title or content, with summaries. | Read |
@@ -114,6 +114,12 @@ Read tools work with connection access enabled. Write tools also require **Allow
 Task creation and updates accept a Markdown description, list, status, priority, project, assignee, labels, due date, estimate, parent task, and blocking tasks. Assignees are local text labels; they do not create accounts or send notifications. Use `task_statuses` to discover custom status IDs. Ticket IDs stay stable when titles or statuses change.
 
 Read an item before editing and pass its current `revision`. Stale edits return `conflict`; task edits return `resource_busy` while that task’s editor is open. Status renames and reordering use the workspace revision returned by `task_statuses`. Notes and task descriptions support the editor’s Markdown formats; the tools update content directly rather than simulating typing.
+
+Within a task column, drop above or below a card to rearrange it. Drop on the column background to put it last. Ordering survives restarts and archive export/import; new tasks appear first. Board and list share **Manual order**. Choosing a date/priority sort is still available; dragging or using **Move up / Move down** switches back to Manual order. Filtered views move only the chosen task and preserve the other tasks' relative order.
+
+Agents can use `task_move` with one of `before_id` / `after_id` (UUID or ticket ID) and a fresh `order_revision` from `tasks_list` or `task_get`, alongside the task's content `revision`. The anchor must be in the destination status; optionally supply `status` to move across columns while positioning. Intervening reorders, additions, deletions, or status/list changes return `conflict`. See the [connector ordering example](connectors/README.md#rearrange-tasks).
+
+Repository contributors and agents should follow [AGENTS.md](AGENTS.md) for app, connector, documentation, website, screenshot, validation, and release follow-ups.
 
 Calendar reading works with the selected source. Calendar writes require existing full macOS Calendar access and a writable calendar. The connector edits personal, non-recurring timed events; invited meetings and all-day events are outside its editing support. Calendar URLs and `.ics` files support reading, meeting notes, and follow-up tasks.
 

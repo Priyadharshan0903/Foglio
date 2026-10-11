@@ -7,23 +7,27 @@ import SwiftUI
 struct TaskCardDragSource: NSViewRepresentable {
     let taskID: UUID
     let onOpen: () -> Void
+    var onDragChanged: (UUID?) -> Void = { _ in }
 
     func makeNSView(context: Context) -> TaskCardDragView {
         let view = TaskCardDragView()
         view.taskID = taskID
         view.onOpen = onOpen
+        view.onDragChanged = onDragChanged
         return view
     }
 
     func updateNSView(_ view: TaskCardDragView, context: Context) {
         view.taskID = taskID
         view.onOpen = onOpen
+        view.onDragChanged = onDragChanged
     }
 }
 
 final class TaskCardDragView: NSView, NSDraggingSource {
     var taskID = UUID()
     var onOpen: () -> Void = {}
+    var onDragChanged: (UUID?) -> Void = { _ in }
     private var pressPoint: NSPoint?
     private(set) var isDragging = false
     var isGrabbed: Bool { isDragging || pressPoint != nil }
@@ -108,11 +112,13 @@ final class TaskCardDragView: NSView, NSDraggingSource {
 
     func draggingSession(_ session: NSDraggingSession, willBeginAt screenPoint: NSPoint) {
         isDragging = true
+        onDragChanged(taskID)
         updateCursor()
     }
     func draggingSession(_ session: NSDraggingSession, movedTo screenPoint: NSPoint) { updateCursor() }
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         isDragging = false
+        onDragChanged(nil)
         pressPoint = nil
         if let window, visibleRect.contains(convert(window.convertPoint(fromScreen: screenPoint), from: nil)) {
             NSCursor.openHand.set()

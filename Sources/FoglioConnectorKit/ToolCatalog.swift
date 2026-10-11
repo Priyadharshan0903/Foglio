@@ -76,11 +76,16 @@ public enum ToolCatalog {
             tool("task_statuses", "List ordered board statuses, stable IDs, categories, and workspace revisions."),
             tool("task_status_create", "Create a custom status within a category. Categories determine completion semantics.", ["name": string("Unique status name.", max: 80), "category": ["type": "string", "enum": ["backlog", "todo", "in_progress", "done"]]], ["name", "category"], read: false),
             tool("task_status_update", "Rename and/or reorder a status without changing task identity. Get a fresh revision from task_statuses first.", edit.merging(["name": string("Unique status name.", max: 80), "position": ["type": "integer", "minimum": 0, "maximum": 19]]) { _, n in n }, ["id", "revision"], read: false),
-            tool("tasks_list", "Search and list tasks with IDs, descriptions, board statuses, and revisions.", page.merging(["list": id, "status": status, "project": string("Filter by project name."), "priority": ["type": "integer", "minimum": 0, "maximum": 4]]) { _, n in n }),
+            tool("tasks_list", "Search and list tasks in saved manual order with IDs, descriptions, statuses, revisions, and order_revision for rearranging cards.", page.merging(["list": id, "status": status, "project": string("Filter by project name."), "priority": ["type": "integer", "minimum": 0, "maximum": 4]]) { _, n in n }),
             tool("task_get", "Read a task by UUID or ticket ID (e.g. FOG-42) and get its current revision before editing.", ["id": id], ["id"]),
             tool("task_create", "Add a task. Optionally choose its list and board status.", taskFields, ["title"], read: false),
             tool("task_update", "Edit task content, properties, list, or custom status. Rejects stale revisions and tasks with an open editor.", edit.merging(taskFields) { _, n in n }, ["id", "revision"], read: false),
-            tool("task_move", "Move a task between lists and/or any status returned by task_statuses. Uses Foglio's completion logging.", edit.merging(["list": id, "status": status]) { _, n in n }, ["id", "revision"], read: false),
+            tool("task_move", "Move a task between lists/statuses or rearrange it before/after another card in the destination status. Ordering requires a fresh order_revision from tasks_list or task_get. Uses Foglio's completion logging.", edit.merging([
+                "list": id, "status": status,
+                "before_id": string("Place before this task UUID or ticket ID. Supply only one of before_id/after_id. Anchor must be in the destination status."),
+                "after_id": string("Place after this task UUID or ticket ID. Supply only one of before_id/after_id. Anchor must be in the destination status."),
+                "order_revision": string("Current order_revision from tasks_list or task_get. Required with before_id/after_id; detects intervening reorders and status/list changes.")
+            ]) { _, n in n }, ["id", "revision"], read: false),
             tool("note_folders", "List note folders and note counts."),
             tool("note_folder_create", "Create a note folder, or return the existing folder with that name.", ["name": title], ["name"], read: false),
             tool("notes_list", "Search notes by title or content. Returns summaries and IDs; use note_get for full Markdown.", page.merging(["folder": id]) { _, n in n }),

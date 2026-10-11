@@ -8,6 +8,8 @@ func taskEditorTests() {
         let id = UUID()
         card.taskID = id
         var opens = 0
+        var activeDrag: UUID?
+        card.onDragChanged = { activeDrag = $0 }
         card.onOpen = { opens += 1 }
         func event(_ type: NSEvent.EventType, _ point: NSPoint) -> NSEvent {
             NSEvent.mouseEvent(with: type, location: point, modifierFlags: [], timestamp: 0,
@@ -34,10 +36,12 @@ func taskEditorTests() {
         for operation in [NSDragOperation.move, []] {
             card.mouseDown(with: down)
             card.draggingSession(session, willBeginAt: .zero)
+            Check.equal(activeDrag, id, "destinations receive the native drag source identity")
             Check.expect(card.isDragging, "starting a drag switches to the grabbing state")
             card.mouseUp(with: up)
             Check.equal(opens, 1, "dragging does not also open the task editor")
             card.draggingSession(session, endedAt: .zero, operation: operation)
+            Check.expect(activeDrag == nil, "drop and cancellation clear destination insertion markers")
             Check.expect(!card.isDragging, "both a completed drop and cancellation clear the grabbing state")
             Check.expect(!card.isGrabbed, "ending or cancelling a drag releases the grab cursor")
             card.mouseUp(with: up)

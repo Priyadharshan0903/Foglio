@@ -42,6 +42,17 @@ final class Store {
     private(set) var tasks: [TaskItem] = []
     private(set) var taskWorkspace = TaskWorkspace()
     var statuses: [TaskBoardStatus] { taskWorkspace.statuses }
+    var manuallyOrderedTasks: [TaskItem] {
+        guard let order = taskWorkspace.taskOrder else { return TaskSort.newest.ordered(tasks) }
+        let byID = Dictionary(uniqueKeysWithValues: tasks.map { ($0.id, $0) })
+        var seen = Set<UUID>()
+        let known = order.compactMap { id -> TaskItem? in
+            guard seen.insert(id).inserted else { return nil }
+            return byID[id]
+        }
+        // Newly imported or externally added tasks remain reachable at the top.
+        return TaskSort.newest.ordered(tasks.filter { !seen.contains($0.id) }) + known
+    }
     private(set) var log: [LogEntry] = []
     private(set) var milestones: [Milestone] = []
 
@@ -660,6 +671,9 @@ final class Store {
         } else { taskWorkspace.lastTicketNumber = max(taskWorkspace.lastTicketNumber, task.ticketNumber ?? 0) }
         // Reserve the number before saving the task; a crash can skip a number,
         // but can never give a previously issued number to another task.
+        // Record insertion order even for tasks created in the same second;
+        // timestamps alone would let random UUIDs decide which one appears first.
+        taskWorkspace.taskOrder = [task.id] + manuallyOrderedTasks.map(\.id)
         guard write(taskWorkspace, to: workspaceURL) else { return }
         if !lanes.contains(task.lane) { task.lane = defaultLane }
         tasks.append(task)
@@ -691,6 +705,10 @@ final class Store {
 
     func deleteTask(id: UUID) {
         tasks.removeAll { $0.id == id }
+        if taskWorkspace.taskOrder != nil {
+            taskWorkspace.taskOrder?.removeAll { $0 == id }
+            write(taskWorkspace, to: workspaceURL)
+        }
         for i in tasks.indices {
             if tasks[i].parentID == id { tasks[i].parentID = nil }
             tasks[i].blockedBy?.removeAll { $0 == id }
@@ -707,6 +725,38 @@ final class Store {
             saveLanes()
         }
         saveTasks()
+    }
+
+    /// Places a task before/after a card, or at the end of a status column.
+    /// Validate before changing status so a stale drop cannot partially move it.
+    /// Only the dragged UUID changes position; filtered-out cards retain theirs.
+    @discardableResult
+    func placeTask(taskId: UUID, statusID: String, relativeTo anchorID: UUID? = nil,
+                   after: Bool = false, autoLog: Bool) -> Bool {
+        guard tasks.contains(where: { $0.id == taskId }), statuses.contains(where: { $0.id == statusID }) else { return false }
+        if let anchorID {
+            guard anchorID != taskId, let anchor = tasks.first(where: { $0.id == anchorID }),
+                  status(for: anchor).id == statusID else { return false }
+        }
+        let current = manuallyOrderedTasks.map(\.id)
+        var order = current.filter { $0 != taskId }
+        if let anchorID, let index = order.firstIndex(of: anchorID) {
+            order.insert(taskId, at: index + (after ? 1 : 0))
+        } else {
+            let peers = Set(tasks.filter { $0.id != taskId && status(for: $0).id == statusID }.map(\.id))
+            let index = order.lastIndex(where: { peers.contains($0) }).map { $0 + 1 } ?? order.count
+            order.insert(taskId, at: index)
+        }
+        if order != current {
+            var workspace = taskWorkspace
+            workspace.taskOrder = order
+            guard write(workspace, to: workspaceURL) else { return false }
+            taskWorkspace = workspace
+        }
+        if let task = tasks.first(where: { $0.id == taskId }), status(for: task).id != statusID {
+            setStatus(taskId: taskId, statusID: statusID, autoLog: autoLog)
+        }
+        return true
     }
 
     /// Completing a task optionally writes it into today's log (:811).

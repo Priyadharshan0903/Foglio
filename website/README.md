@@ -23,6 +23,8 @@ The **Connectors** navigation link opens a dedicated section with setup steps fo
 
 The section explains reading by default, the Allow changes switch, local stdio/socket transport, revision checks, and calendar editing limits. It also distinguishes a local connection from the agent provider’s handling of content. Full configuration and parameters are in the [connector guide](../connectors/README.md). Keep the tool names and access labels aligned with [ToolCatalog.swift](../Sources/FoglioConnectorKit/ToolCatalog.swift) when tools change.
 
+Task copy covers saved ordering within columns as well as moves between stages. `tasks_list` returns manual order; `task_move` supports `before_id` / `after_id` with an `order_revision` for conflict protection. These extend existing tools, so the inventory stays at 26. Follow the repository's [AGENTS.md](../AGENTS.md) change workflow to keep app behavior, connector schemas, website, documentation, screenshots, and release artifacts aligned.
+
 ## Images and motion
 
 All assets live in [assets](assets/). See [the asset guide](assets/ASSETS.md) for composition, provenance, accessibility, and animation guidance. Full generation prompts are in [prompts.json](assets/prompts.json).

@@ -42,7 +42,7 @@ enum Exporter {
             trash: store.trash,
             folders: store.folders,
             lanes: store.lanes,
-            tasks: store.tasks,
+            tasks: store.manuallyOrderedTasks,
             taskWorkspace: store.taskWorkspace,
             attachments: LibraryAttachments.snapshot(at: store.root),
             log: store.log,

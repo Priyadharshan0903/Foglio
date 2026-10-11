@@ -16,6 +16,8 @@ struct TaskBoardStatus: Codable, Equatable, Identifiable {
 struct TaskWorkspace: Codable, Equatable {
     var statuses: [TaskBoardStatus] = TaskBoardStatus.starters
     var lastTicketNumber: Int = 0
+    /// Absent in older libraries. UUID order is shared by board, list, and MCP.
+    var taskOrder: [UUID]?
 }
 
 enum TaskWorkspaceError: LocalizedError {
@@ -32,10 +34,11 @@ enum TaskWorkspaceError: LocalizedError {
 }
 
 enum TaskSort: String, CaseIterable, Identifiable {
-    case newest, oldest, priority, dueDate
+    case manual, newest, oldest, priority, dueDate
     var id: String { rawValue }
     var label: String {
         switch self {
+        case .manual: "Manual order"
         case .newest: "Newest first"
         case .oldest: "Oldest first"
         case .priority: "Priority"
@@ -43,7 +46,8 @@ enum TaskSort: String, CaseIterable, Identifiable {
         }
     }
     func ordered(_ tasks: [TaskItem]) -> [TaskItem] {
-        tasks.sorted { a, b in
+        if self == .manual { return tasks }
+        return tasks.sorted { a, b in
             switch self {
             case .priority:
                 let left = a.taskPriority == .none ? 5 : a.taskPriority.rawValue
@@ -53,7 +57,7 @@ enum TaskSort: String, CaseIterable, Identifiable {
                 if a.dueDate != b.dueDate { return (a.dueDate ?? .distantFuture) < (b.dueDate ?? .distantFuture) }
             case .oldest:
                 if a.createdAt != b.createdAt { return a.createdAt < b.createdAt }
-            case .newest: break
+            case .manual, .newest: break
             }
             if a.createdAt != b.createdAt { return a.createdAt > b.createdAt }
             return a.id.uuidString < b.id.uuidString
