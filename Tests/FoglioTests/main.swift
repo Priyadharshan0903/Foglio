@@ -37,6 +37,7 @@ MainActor.assumeIsolated { exportTests() }
 
 MainActor.assumeIsolated { renderPreviewsIfRequested() }
 MainActor.assumeIsolated { renderTaskPreviewsIfRequested() }
+MainActor.assumeIsolated { renderSettingsPreviewsIfRequested() }
 MainActor.assumeIsolated { renderLandingAssetsIfRequested() }
 connectorProtocolTests()
 Task { @MainActor in
