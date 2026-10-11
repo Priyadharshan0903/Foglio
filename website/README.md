@@ -1,6 +1,6 @@
 # Foglio landing page
 
-A local, buildless landing page with cinematic paper artwork, native app previews, scroll-driven feature transitions, eight working theme previews, and a real DMG download. Nothing has been published.
+A local, buildless landing page with cinematic paper artwork, native app previews, scroll-driven feature transitions, eight working theme previews, a local MCP connector showcase, and a real DMG download. Publishing is managed by the repository’s Pages workflow; local edits can be reviewed with the commands below.
 
 ## Preview
 
@@ -16,6 +16,12 @@ Open **http://127.0.0.1:4173**. `npm run build` first prepares the downloadable 
 Keep the server terminal running while viewing the page. `ERR_CONNECTION_REFUSED` means the server is stopped; run `npm run dev` again. From the repository root, use `npm --prefix website run dev`.
 
 `npm run preview` serves the production output. The static, self-contained deployment folder is `website/dist/`; it includes the DMG, checksum, fonts, and optimized images. The source page can also be opened directly after preparing downloads, though an HTTP preview is recommended.
+
+## Connector showcase
+
+The **Connectors** navigation link opens a dedicated section with setup steps for Codex, Claude Code, and Claude Desktop, a native Agent connections settings screenshot, and all **26 MCP tools** grouped by connection, task workflow, tasks, notes, calendar, and meeting follow-ups. Each tool includes a short purpose and a Read/Write label. Native disclosure controls work with or without JavaScript.
+
+The section explains reading by default, the Allow changes switch, local stdio/socket transport, revision checks, and calendar editing limits. It also distinguishes a local connection from the agent provider’s handling of content. Full configuration and parameters are in the [connector guide](../connectors/README.md). Keep the tool names and access labels aligned with [ToolCatalog.swift](../Sources/FoglioConnectorKit/ToolCatalog.swift) when tools change.
 
 ## Images and motion
 
@@ -59,6 +65,6 @@ To regenerate the native screenshots, run from the repository root:
 FOGLIO_LANDING_ASSETS=website/assets/originals/app swift run --disable-sandbox FoglioTests
 ```
 
-Then convert the PNGs with `cwebp -q 92` into the matching filenames in `assets/images/`. The optional renderer is [LandingAssets.swift](../Tests/FoglioTests/LandingAssets.swift); it does not open calendar accounts or modify the real app library.
+Then convert the PNGs with `cwebp -q 92` into the matching filenames in `assets/images/`. The optional renderers are [LandingAssets.swift](../Tests/FoglioTests/LandingAssets.swift), [TaskPreviews.swift](../Tests/FoglioTests/TaskPreviews.swift), and [SettingsPreviews.swift](../Tests/FoglioTests/SettingsPreviews.swift). Follow the [screenshot regeneration guide](../docs/images/README.md) to refresh the task board and connector settings as well. These fixtures do not access personal calendar accounts or modify the real app library.
 
 Before public launch, set an absolute Open Graph image URL for the final domain and update the download metadata to the intended release. No public domain, legal claims, testimonials, pricing, or tracking have been invented.
