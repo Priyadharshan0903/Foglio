@@ -2,7 +2,7 @@
 
 These are native SwiftUI snapshots from the opt-in test preview renderers. They use fictional notes and tasks, temporary libraries, and isolated preferences. The agent connection state is an example; no agent server is started by that preview.
 
-`FOGLIO_TASK_PREVIEWS` also emits `drag-feedback-<theme>.png` for all eight palettes. These render the actual lane-highlight/insertion-line decoration with simulated hover state and fictional cards; they verify appearance, not live mouse dragging. The existing board screenshots show the normal resting state.
+`FOGLIO_TASK_PREVIEWS` also emits `drag-feedback-<theme>.png` for all eight palettes. These render the actual lane highlight, insertion line, and full-height placeholder with simulated hover state and fictional cards. `native-lift-ember.png` renders the real board after a simulated native source-lift callback; it checks the source gap and restoration lifecycle. `native-drag-card-ember.png` renders its actual lifted-card image, including shadow padding. These are not live mouse drag verification. The existing board screenshots show the normal resting state.
 
 | Image | Renderer | Content |
 | --- | --- | --- |

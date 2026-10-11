@@ -25,7 +25,7 @@ The section explains reading by default, the Allow changes switch, local stdio/s
 
 Task copy covers saved ordering within columns as well as moves between stages. `tasks_list` returns manual order; `task_move` supports `before_id` / `after_id` with an `order_revision` for conflict protection. These extend existing tools, so the inventory stays at 26. Follow the repository's [AGENTS.md](../AGENTS.md) change workflow to keep app behavior, connector schemas, website, documentation, screenshots, and release artifacts aligned.
 
-The board's placement guide combines a theme-colored lane highlight and insertion line throughout a drag, including gaps between cards. This is presentation feedback; connector ordering arguments are unchanged.
+The board drag interaction uses a full-size lifted card preview, a theme-colored placeholder, and animated card reflow (disabled with Reduce Motion). The lane highlight and insertion line stay visible together. Holding a card near a lane's top/bottom or the board's left/right edges scrolls continuously, faster toward the edge, until the pointer moves away or the drag ends. Only dropping commits the projected move; cancelling restores the layout. This is pointer interaction; connector ordering arguments are unchanged because agents can already position tasks directly with `task_move`. See [Linear's board workflow](https://linear.app/docs/board-layout) for the interaction reference; Foglio implements its own native macOS behavior.
 
 ## Images and motion
 

@@ -6,6 +6,30 @@ struct TaskDropPlacement: Equatable {
     let after: Bool
 }
 
+struct TaskBoardDragHover: Equatable {
+    let statusID: String
+    let placement: TaskDropPlacement?
+}
+
+/// A projected slot changes presentation only. The Store's order is committed
+/// once, on drop; cancelling needs no persistence or undo operation.
+enum TaskLaneDragLayout {
+    static func index(taskIDs: [UUID], sourceID: UUID, placement: TaskDropPlacement?, restoringSource: Bool = false) -> Int {
+        let peers = taskIDs.filter { $0 != sourceID }
+        if restoringSource, let original = taskIDs.firstIndex(of: sourceID) { return original }
+        guard let placement, let anchor = peers.firstIndex(of: placement.anchorID) else { return peers.count }
+        return anchor + (placement.after ? 1 : 0)
+    }
+
+    static func placement(at index: Int, taskIDs: [UUID], sourceID: UUID) -> TaskDropPlacement? {
+        let peers = taskIDs.filter { $0 != sourceID }
+        guard !peers.isEmpty else { return nil }
+        let index = min(max(index, 0), peers.count)
+        if index < peers.count { return TaskDropPlacement(anchorID: peers[index], after: false) }
+        return TaskDropPlacement(anchorID: peers.last!, after: true)
+    }
+}
+
 /// One hover session owns both lane highlighting and insertion feedback.
 /// Geometry is resolved in the lane, including the scroll view's current offset.
 struct TaskColumnDragState: Equatable {
@@ -13,9 +37,13 @@ struct TaskColumnDragState: Equatable {
     private(set) var location: CGPoint?
     private(set) var placement: TaskDropPlacement?
 
-    mutating func update(sourceID: UUID, location: CGPoint, taskIDs: [UUID], frames: [UUID: CGRect]) {
+    mutating func update(sourceID: UUID, location: CGPoint, taskIDs: [UUID], frames: [UUID: CGRect], placeholder: CGRect? = nil) {
+        let sameSession = self.sourceID == sourceID
         self.sourceID = sourceID
         self.location = location
+        // Reflow puts a full-height gap under the cursor. Keep that slot while
+        // inside it instead of repeatedly switching between its adjacent cards.
+        if sameSession, let placeholder, placeholder.insetBy(dx: 0, dy: -4).contains(location) { return }
         let cards = taskIDs.compactMap { id -> (UUID, CGRect)? in
             guard id != sourceID, let frame = frames[id], frame.height > 0 else { return nil }
             return (id, frame)
@@ -31,10 +59,12 @@ struct TaskColumnDragState: Equatable {
 
     mutating func clear() { self = TaskColumnDragState() }
 
-    func indicatorY(frames: [UUID: CGRect], emptyY: CGFloat, viewport: CGRect? = nil) -> CGFloat {
+    func indicatorY(frames: [UUID: CGRect], emptyY: CGFloat, viewport: CGRect? = nil, placeholder: CGRect? = nil) -> CGFloat {
         var y = emptyY
         // Put the line in the gap rather than across a card's text/border.
-        if let placement, let frame = frames[placement.anchorID] {
+        if let placeholder {
+            y = placeholder.minY - 3
+        } else if let placement, let frame = frames[placement.anchorID] {
             y = placement.after ? frame.maxY + 4 : frame.minY - 4
         }
         // A partially clipped card still needs a visible guide in the task area.
@@ -59,14 +89,37 @@ struct TaskColumnViewportKey: PreferenceKey {
     }
 }
 
+struct TaskDropPlaceholderBoundsKey: PreferenceKey {
+    static var defaultValue: Anchor<CGRect>? { nil }
+    static func reduce(value: inout Anchor<CGRect>?, nextValue: () -> Anchor<CGRect>?) {
+        if let next = nextValue() { value = next }
+    }
+}
+
+struct TaskDropPlaceholder: View {
+    let height: CGFloat
+    let theme: Theme
+    var body: some View {
+        RoundedRectangle(cornerRadius: 8).fill(theme.accentSoft.opacity(0.45))
+            .overlay(RoundedRectangle(cornerRadius: 8)
+                .strokeBorder(theme.accentDeep.opacity(0.6), style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
+            .frame(height: max(44, height))
+            .anchorPreference(key: TaskDropPlaceholderBoundsKey.self, value: .bounds) { $0 }
+            .allowsHitTesting(false).accessibilityHidden(true)
+    }
+}
+
 struct TaskColumnDropTarget: ViewModifier {
     let taskIDs: [UUID]
     let draggedID: UUID?
     let theme: Theme
     let onDrop: (UUID, TaskDropPlacement?) -> Void
+    var onHover: (TaskDropPlacement?) -> Void = { _ in }
+    var onExit: () -> Void = {}
     @State private var frames: [UUID: CGRect] = [:]
     @State private var viewport: CGRect?
     @State private var feedback = TaskColumnDragState()
+    @State private var placeholder: CGRect?
 
     private var active: Bool { draggedID != nil && feedback.sourceID == draggedID }
 
@@ -74,7 +127,7 @@ struct TaskColumnDropTarget: ViewModifier {
         content
             .modifier(TaskColumnDropDecoration(active: active,
                        insertionY: feedback.indicatorY(frames: frames, emptyY: (viewport?.minY ?? 48) + 4,
-                                                        viewport: viewport), theme: theme))
+                                                        viewport: viewport, placeholder: placeholder), theme: theme))
             .backgroundPreferenceValue(TaskCardBoundsKey.self) { anchors in
                 GeometryReader { geometry in
                     let resolved = anchors.mapValues { geometry[$0] }
@@ -92,16 +145,27 @@ struct TaskColumnDropTarget: ViewModifier {
                         .allowsHitTesting(false)
                 }
             }
+            .backgroundPreferenceValue(TaskDropPlaceholderBoundsKey.self) { anchor in
+                GeometryReader { geometry in
+                    let resolved = anchor.map { geometry[$0] }
+                    Color.clear.onAppear { placeholder = resolved }
+                        .onChange(of: resolved) { _, new in placeholder = new }
+                        .allowsHitTesting(false)
+                }
+            }
             .onDrop(of: [UTType.text.identifier], delegate: TaskColumnDropDelegate(
-                draggedID: draggedID, taskIDs: taskIDs, frames: frames,
+                draggedID: draggedID, taskIDs: taskIDs, frames: frames, placeholder: placeholder,
                 feedback: $feedback, onDrop: onDrop))
             .onChange(of: draggedID) { _, _ in feedback.clear() }
+            .onChange(of: feedback) { _, new in
+                if new.sourceID != nil { onHover(new.placement) } else { onExit() }
+            }
     }
 
     private func updateFrames(_ new: [UUID: CGRect]) {
         frames = new
         if let sourceID = feedback.sourceID, let location = feedback.location {
-            feedback.update(sourceID: sourceID, location: location, taskIDs: taskIDs, frames: new)
+            feedback.update(sourceID: sourceID, location: location, taskIDs: taskIDs, frames: new, placeholder: placeholder)
         }
     }
 }
@@ -141,6 +205,7 @@ private struct TaskColumnDropDelegate: DropDelegate {
     let draggedID: UUID?
     let taskIDs: [UUID]
     let frames: [UUID: CGRect]
+    let placeholder: CGRect?
     @Binding var feedback: TaskColumnDragState
     let onDrop: (UUID, TaskDropPlacement?) -> Void
 
@@ -164,6 +229,6 @@ private struct TaskColumnDropDelegate: DropDelegate {
     }
     private func update(_ info: DropInfo) {
         guard let draggedID else { feedback.clear(); return }
-        feedback.update(sourceID: draggedID, location: info.location, taskIDs: taskIDs, frames: frames)
+        feedback.update(sourceID: draggedID, location: info.location, taskIDs: taskIDs, frames: frames, placeholder: placeholder)
     }
 }

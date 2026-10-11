@@ -11,6 +11,9 @@ struct TasksView: View {
     @State private var pendingLaneDeletion: Lane?
     @State private var deletedTask: TaskItem?
     @State private var draggedTaskID: UUID?
+    @State private var draggedTaskSize = CGSize(width: 300, height: 120)
+    @State private var boardDragHover: TaskBoardDragHover?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var managingStatuses = false
     @State private var selectedProject: String?
     @State private var selectedPriority: TaskPriority?
@@ -151,12 +154,24 @@ struct TasksView: View {
                         column(workflow, width: width, height: geometry.size.height - 32)
                     }
                 }.padding(.horizontal, 24).padding(.vertical, 16)
+                    .background(TaskDragAutoScroll(isDragging: draggedTaskID != nil, axis: .horizontal)
+                        .allowsHitTesting(false).accessibilityHidden(true))
             }
         }
     }
 
     private func column(_ workflow: TaskBoardStatus, width: CGFloat, height: CGFloat) -> some View {
         let tasks = visible.filter { store.status(for: $0).id == workflow.id }
+        let peers = tasks.filter { $0.id != draggedTaskID }
+        let ids = tasks.map(\.id)
+        let sourceInLane = draggedTaskID.map { ids.contains($0) } ?? false
+        let showsSlot = draggedTaskID != nil && (boardDragHover?.statusID == workflow.id ||
+            (boardDragHover == nil && sourceInLane))
+        let slot = draggedTaskID.map {
+            TaskLaneDragLayout.index(taskIDs: ids, sourceID: $0, placement: boardDragHover?.placement,
+                                     restoringSource: boardDragHover == nil)
+        } ?? 0
+        let beforeID = showsSlot && slot < peers.count ? peers[slot].id : nil
         return VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 7) {
                 statusIcon(workflow)
@@ -173,26 +188,50 @@ struct TasksView: View {
                 }.buttonStyle(.flat).help("Add task to \(workflow.label)").accessibilityLabel("Add task to \(workflow.label)")
             }.padding(.horizontal, 4)
             ScrollView {
-                LazyVStack(spacing: 8) {
-                    ForEach(tasks) { task in card(task) }
-                    if tasks.isEmpty {
+                LazyVStack(spacing: 0) {
+                    ForEach(tasks) { task in
+                        if showsSlot && task.id == beforeID {
+                            TaskDropPlaceholder(height: draggedTaskSize.height, theme: theme).padding(.bottom, 8)
+                        }
+                        // Keep the native drag source mounted until AppKit ends
+                        // its session, but remove its occupied space immediately.
+                        card(task).frame(height: task.id == draggedTaskID ? 0 : nil)
+                            .opacity(task.id == draggedTaskID ? 0 : 1).clipped()
+                            .padding(.bottom, task.id == draggedTaskID ? 0 : 8)
+                    }
+                    if showsSlot && beforeID == nil {
+                        TaskDropPlaceholder(height: draggedTaskSize.height, theme: theme).padding(.bottom, 8)
+                    }
+                    if tasks.isEmpty && !showsSlot {
                         Text(state.search.isEmpty ? "No tasks" : "No matching tasks")
                             .font(Typo.sans(11.5)).foregroundStyle(theme.muted).frame(maxWidth: .infinity, minHeight: 70)
                             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(theme.line, style: StrokeStyle(lineWidth: 1, dash: [4, 4])))
+                            .padding(.bottom, 8)
                     }
                     Button { create(in: workflow) } label: {
                         Label("Add task", systemImage: "plus").font(Typo.sans(11.5)).foregroundStyle(theme.muted)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(10).hoverHighlight(theme)
                     }.buttonStyle(.flat)
                 }.padding(4)
+                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.16), value: beforeID)
+                    .background(TaskDragAutoScroll(isDragging: draggedTaskID != nil)
+                        .allowsHitTesting(false).accessibilityHidden(true))
             }
             .anchorPreference(key: TaskColumnViewportKey.self, value: .bounds) { $0 }
         }
         .padding(8).frame(width: width, height: max(180, height), alignment: .topLeading)
-        .modifier(TaskColumnDropTarget(taskIDs: tasks.map(\.id), draggedID: draggedTaskID, theme: theme) { id, placement in
+        .modifier(TaskColumnDropTarget(taskIDs: ids, draggedID: draggedTaskID, theme: theme, onDrop: { id, placement in
             if store.placeTask(taskId: id, statusID: workflow.id, relativeTo: placement?.anchorID,
                                after: placement?.after ?? false, autoLog: state.autoLog) { sort = .manual }
-        })
+        }, onHover: { placement in
+            guard let draggedTaskID else { return }
+            let index = TaskLaneDragLayout.index(taskIDs: ids, sourceID: draggedTaskID, placement: placement)
+            let hover = TaskBoardDragHover(statusID: workflow.id,
+                placement: TaskLaneDragLayout.placement(at: index, taskIDs: ids, sourceID: draggedTaskID))
+            if boardDragHover != hover { boardDragHover = hover }
+        }, onExit: {
+            if boardDragHover?.statusID == workflow.id { boardDragHover = nil }
+        }))
     }
 
     private func card(_ task: TaskItem) -> some View {
@@ -257,7 +296,8 @@ struct TasksView: View {
         }.buttonStyle(.flat)
             .overlay {
                 TaskCardDragSource(taskID: task.id, onOpen: { taskEdit = TaskPresentation(task: task, isNew: false) },
-                                   onDragChanged: { draggedTaskID = $0 })
+                                   onDragChanged: { draggedTaskID = $0; if $0 == nil { boardDragHover = nil } },
+                                   onLift: { draggedTaskSize = $0 })
                     .accessibilityHidden(true)
             }
             .contextMenu { taskActions(task) }.help("Open \(task.label)")
