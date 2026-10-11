@@ -12,6 +12,7 @@ MainActor.assumeIsolated { continuousEditorTests() }
 MainActor.assumeIsolated { richEditorTests() }
 MainActor.assumeIsolated { taskWorkflowTests() }
 MainActor.assumeIsolated { taskWorkspaceTests() }
+MainActor.assumeIsolated { taskOrderingTests() }
 MainActor.assumeIsolated { taskEditorTests() }
 MainActor.assumeIsolated { attachmentTests() }
 sourceModeTests()

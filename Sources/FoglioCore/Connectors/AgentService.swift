@@ -109,13 +109,16 @@ final class AgentService {
             let lane = try a["list"].map { try list($0.string!) }
             let status = try a["status"].map { try workflow($0.string!) }
             let query = a["query"]?.string ?? ""
-            let tasks = store.tasks.filter { task in
+            let tasks = store.manuallyOrderedTasks.filter { task in
                 (lane == nil || task.lane == lane) && (status == nil || store.status(for: task).id == status?.id)
                 && task.matches(query)
                 && (a["project"] == nil || task.project?.caseInsensitiveCompare(a["project"]!.string!) == .orderedSame)
                 && (a["priority"] == nil || task.taskPriority.rawValue == Int(a["priority"]!.number!))
             }
-            return page(tasks.map(taskJSON), key: "tasks", a)
+            let orderRevision = taskOrderRevision
+            var result = page(tasks.map { taskJSON($0, orderRevision: orderRevision) }, key: "tasks", a).object!
+            result["order_revision"] = .string(orderRevision)
+            return .object(result)
         case "task_get": return try taskJSON(task(a))
         case "task_create":
             let title = try nonempty(a, "title")
@@ -131,6 +134,18 @@ final class AgentService {
             guard !store.editingTaskIds.contains(current.id) else { throw ConnectorError("resource_busy", "This task's editor is open. Save or close it in Foglio before an agent edits it.") }
             let lane = try a["list"].map { try list($0.string!) }
             let status = try a["status"].map { try workflow($0.string!) }
+            let before = a["before_id"], after = a["after_id"]
+            guard before == nil || after == nil else { throw ConnectorError("invalid_arguments", "Supply before_id or after_id, not both.") }
+            let anchor = try (before ?? after).map { try task(["id": $0]) }
+            if let anchor {
+                guard a["order_revision"] != nil else { throw ConnectorError("invalid_arguments", "Get order_revision from tasks_list or task_get before rearranging tasks.") }
+                guard a["order_revision"]?.string == taskOrderRevision else { throw ConnectorError("conflict", "Task order changed. Read tasks_list again before rearranging.") }
+                guard anchor.id != current.id, store.status(for: anchor).id == (status ?? store.status(for: current)).id else {
+                    throw ConnectorError("invalid_arguments", "The anchor must be another task in the destination status.")
+                }
+            } else if a["order_revision"] != nil {
+                throw ConnectorError("invalid_arguments", "Supply before_id or after_id with order_revision.")
+            }
             let title = try a["title"].map { _ in try nonempty(a, "title") } ?? current.label
             guard a.keys.contains(where: { !["id", "revision"].contains($0) }) else { throw ConnectorError("invalid_arguments", "Supply a field to change.") }
             var updated = current
@@ -140,8 +155,16 @@ final class AgentService {
             }
             try beginWrite()
             if name == "task_update" { store.update(updated) }
+            if let anchor {
+                guard store.placeTask(taskId: current.id, statusID: (status ?? store.status(for: current)).id,
+                                      relativeTo: anchor.id, after: after != nil, autoLog: autoLog()) else {
+                    try finishWrite()
+                    throw ConnectorError("invalid_arguments", "The task or anchor is no longer available.")
+                }
+            } else if let status {
+                store.setStatus(taskId: current.id, statusID: status.id, autoLog: autoLog())
+            }
             if let lane { store.move(taskId: current.id, to: lane) }
-            if let status { store.setStatus(taskId: current.id, statusID: status.id, autoLog: autoLog()) }
             try finishWrite(); return taskJSON(store.tasks.first { $0.id == current.id }!)
         case "note_folders": return ["folders": .array(store.folders.map { folder in
             ["id": .string(folder.id), "name": .string(folder.label), "count": .number(Double(store.notes.filter { $0.folder == folder }.count))]
@@ -286,7 +309,7 @@ final class AgentService {
         return .object([key: .array(Array(values.dropFirst(offset).prefix(limit))), "total": .number(Double(values.count)),
                         "next_offset": end < values.count ? .number(Double(end)) : .null])
     }
-    private func taskJSON(_ task: TaskItem) -> JSON {
+    private func taskJSON(_ task: TaskItem, orderRevision: String? = nil) -> JSON {
         ["id": .string(task.id.uuidString), "title": .string(task.label), "description": .string(task.meta),
          "ticket_id": .string(task.ticketID), "list": .string(task.lane.id), "status": .string(store.status(for: task).id),
          "status_name": .string(store.status(for: task).name),
@@ -301,7 +324,10 @@ final class AgentService {
          "is_blocked": .bool(store.tasks.contains { (task.blockedBy ?? []).contains($0.id) && !$0.done }),
          "created_at": .string(AgentRevision.date(task.createdAt)), "completed_at": task.completedAt.map { .string(AgentRevision.date($0)) } ?? .null,
          "event_id": task.sourceEventID.map(JSON.string) ?? .null,
-         "revision": .string(AgentRevision.of(task))]
+         "revision": .string(AgentRevision.of(task)), "order_revision": .string(orderRevision ?? taskOrderRevision)]
+    }
+    private var taskOrderRevision: String {
+        AgentRevision.of(store.manuallyOrderedTasks.map { [$0.id.uuidString, store.status(for: $0).id, $0.lane.id] })
     }
     private func noteJSON(_ note: Note, full: Bool = true) -> JSON {
         var result: [String: JSON] = ["id": .string(note.id.uuidString), "title": .string(note.title), "folder": .string(note.folder.id),

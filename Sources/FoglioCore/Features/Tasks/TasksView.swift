@@ -11,17 +11,18 @@ struct TasksView: View {
     @State private var pendingLaneDeletion: Lane?
     @State private var deletedTask: TaskItem?
     @State private var dropTarget: String?
+    @State private var draggedTaskID: UUID?
     @State private var managingStatuses = false
     @State private var selectedProject: String?
     @State private var selectedPriority: TaskPriority?
-    @State private var sort: TaskSort = .newest
+    @State private var sort: TaskSort = .manual
     private var projects: [String] { Array(Set(store.tasks.compactMap(\.project).filter { !$0.isEmpty })).sorted() }
     private var theme: Theme { state.theme }
     private var scopedTasks: [TaskItem] {
-        store.tasks.filter { (selectedProject == nil || $0.project == selectedProject) && (selectedPriority == nil || $0.taskPriority == selectedPriority) }
+        store.manuallyOrderedTasks.filter { (selectedProject == nil || $0.project == selectedProject) && (selectedPriority == nil || $0.taskPriority == selectedPriority) }
     }
     private var visible: [TaskItem] {
-        sort.ordered(TaskListQuery.filtered(scopedTasks, status: status, list: selectedList, search: state.search))
+        sort.ordered(TaskListQuery.filtered(scopedTasks, status: status, list: selectedList, search: state.search, preservingOrder: sort == .manual))
     }
 
     var body: some View {
@@ -105,6 +106,7 @@ struct TasksView: View {
                 ForEach(TaskSort.allCases) { order in Button(order.label) { sort = order } }
             } label: { Image(systemName: "arrow.up.arrow.down").foregroundStyle(theme.muted) }
                 .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize().help("Sort: " + sort.label)
+                .accessibilityLabel("Sort tasks").accessibilityValue(sort.label)
             Menu {
                 Button("All lists") { selectedList = nil }
                 Divider()
@@ -195,7 +197,9 @@ struct TasksView: View {
                 guard value.hasPrefix("foglio-task:") else { return nil }
                 return UUID(uuidString: String(value.dropFirst("foglio-task:".count)))
             }.filter { id in store.tasks.contains { $0.id == id } }
-            for id in ids { store.setStatus(taskId: id, statusID: workflow.id, autoLog: state.autoLog) }
+            for id in ids {
+                if store.placeTask(taskId: id, statusID: workflow.id, autoLog: state.autoLog) { sort = .manual }
+            }
             return !ids.isEmpty
         } isTargeted: { targeted in
             if targeted { dropTarget = workflow.id } else if dropTarget == workflow.id { dropTarget = nil }
@@ -263,10 +267,14 @@ struct TasksView: View {
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(theme.line, lineWidth: 1)).hoverHighlight(theme)
         }.buttonStyle(.flat)
             .overlay {
-                TaskCardDragSource(taskID: task.id) { taskEdit = TaskPresentation(task: task, isNew: false) }
+                TaskCardDragSource(taskID: task.id, onOpen: { taskEdit = TaskPresentation(task: task, isNew: false) },
+                                   onDragChanged: { draggedTaskID = $0; if $0 == nil { dropTarget = nil } })
                     .accessibilityHidden(true)
             }
             .contextMenu { taskActions(task) }.help("Open \(task.label)")
+            .modifier(TaskInsertionTarget(taskID: task.id, draggedID: draggedTaskID, theme: theme) { id, after in
+                place(id, beside: task, after: after)
+            })
     }
 
     private var list: some View {
@@ -297,7 +305,16 @@ struct TasksView: View {
                                 }
                                 .padding(.horizontal, 24).padding(.vertical, 13).hoverHighlight(theme, cornerRadius: 0)
                                 .overlay(alignment: .bottom) { Rectangle().fill(theme.lineSoft).frame(height: 1) }
-                            }.buttonStyle(.flat).contextMenu { taskActions(task) }
+                            }.buttonStyle(.flat)
+                                .overlay {
+                                    TaskCardDragSource(taskID: task.id, onOpen: { taskEdit = TaskPresentation(task: task, isNew: false) },
+                                                       onDragChanged: { draggedTaskID = $0 })
+                                        .accessibilityHidden(true)
+                                }
+                                .contextMenu { taskActions(task) }
+                                .modifier(TaskInsertionTarget(taskID: task.id, draggedID: draggedTaskID, theme: theme) { id, after in
+                                    place(id, beside: task, after: after)
+                                })
                         }
                     }
                 }
@@ -311,6 +328,11 @@ struct TasksView: View {
 
     @ViewBuilder private func taskActions(_ task: TaskItem) -> some View {
         Button("Open task…") { taskEdit = TaskPresentation(task: task, isNew: false) }
+        let peers = visible.filter { store.status(for: $0).id == store.status(for: task).id }
+        if let index = peers.firstIndex(where: { $0.id == task.id }) {
+            Button("Move up") { place(task.id, beside: peers[index - 1], after: false) }.disabled(index == 0)
+            Button("Move down") { place(task.id, beside: peers[index + 1], after: true) }.disabled(index == peers.count - 1)
+        }
         Menu("Set status") {
             ForEach(store.statuses) { workflow in
                 Button(workflow.label) { store.setStatus(taskId: task.id, statusID: workflow.id, autoLog: state.autoLog) }
@@ -333,6 +355,10 @@ struct TasksView: View {
     private func statusIcon(_ workflow: TaskBoardStatus) -> some View {
         Image(systemName: workflow.symbol).font(.system(size: 12))
             .foregroundStyle([.inProgress, .done].contains(workflow.category) ? theme.accentDeep : theme.muted)
+    }
+    private func place(_ id: UUID, beside task: TaskItem, after: Bool) {
+        if store.placeTask(taskId: id, statusID: store.status(for: task).id, relativeTo: task.id,
+                           after: after, autoLog: state.autoLog) { sort = .manual }
     }
     private func create(in workflow: TaskBoardStatus) {
         taskEdit = TaskPresentation(task: TaskItem(lane: selectedList ?? store.defaultLane,

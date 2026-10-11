@@ -108,7 +108,7 @@
           </article>
           <article class="story-step" data-step="tasks" id="tasks-step">
             <p class="step-number">02 / MAKE PROGRESS</p><h3>A small step.<br><em>Then the next.</em></h3>
-            <p>Give your tasks a place to go. Drag a card from an idea to a done thing, or settle into a simple list.</p>
+            <p>Give your tasks a place to go. Drag cards between stages, arrange them within a column, or settle into a simple list. Your chosen order stays with you.</p>
             <ul class="feature-list"><li>Custom statuses and stable ticket IDs</li><li>Priorities, projects, subtasks, and dependencies</li><li>Rich descriptions when details matter</li></ul>
             <img class="mobile-scene" src="assets/images/tasks-ember.webp" width="1840" height="940" loading="lazy" alt="Foglio task board with custom statuses and sample studio tasks.">
           </article>
@@ -172,7 +172,7 @@
         <div class="connector-preview reveal"><figure class="app-window"><img src="assets/images/connectors-ember.webp" width="1200" height="860" loading="lazy" alt="Foglio Agent connections settings with access switches and setup buttons for Codex, Claude Code, and Claude Desktop."></figure><p class="preview-caption">Native app preview · Example connection state</p></div>
       </div>
       <div class="connector-examples">
-        <article class="reveal"><span>01 / TASKS</span><h3>Move the work forward.</h3><p>Create tasks with properties, subtasks, and dependencies. Add or rename board statuses and move a ticket such as FOG-42 into review.</p></article>
+        <article class="reveal"><span>01 / TASKS</span><h3>Move the work forward.</h3><p>Create tasks with properties, subtasks, and dependencies. Add or rename board statuses, move FOG-42 into review, or place it before another card.</p></article>
         <article class="reveal"><span>02 / NOTES</span><h3>Make room for the details.</h3><p>Find a note, read its full Markdown, or save a new checklist. Organize notes in folders and use the same formats as the editor.</p></article>
         <article class="reveal"><span>03 / MEETINGS</span><h3>Leave with a next step.</h3><p>Read connected calendars, create a meeting note, and capture follow-up tasks. Edit eligible personal events in writable macOS calendars.</p></article>
       </div>
@@ -190,11 +190,11 @@
           <details class="connector-tool-group"><summary><span>Tasks</span><span class="tool-group-count">7 tools <span aria-hidden="true">+</span></span></summary><ul>
             <li data-mcp-tool="task_lists"><div><code>task_lists</code><span class="tool-access">Read</span></div><p>List task lists, independently of board statuses.</p></li>
             <li data-mcp-tool="task_list_create"><div><code>task_list_create</code><span class="tool-access">Write</span></div><p>Create a task list.</p></li>
-            <li data-mcp-tool="tasks_list"><div><code>tasks_list</code><span class="tool-access">Read</span></div><p>Search tasks and filter by list, status, project, or priority.</p></li>
+            <li data-mcp-tool="tasks_list"><div><code>tasks_list</code><span class="tool-access">Read</span></div><p>Search tasks in saved manual order and filter by list, status, project, or priority.</p></li>
             <li data-mcp-tool="task_get"><div><code>task_get</code><span class="tool-access">Read</span></div><p>Read a task and its revision by UUID or ticket ID.</p></li>
             <li data-mcp-tool="task_create"><div><code>task_create</code><span class="tool-access">Write</span></div><p>Create a task with its description and properties.</p></li>
             <li data-mcp-tool="task_update"><div><code>task_update</code><span class="tool-access">Write</span></div><p>Edit task content, properties, or relationships.</p></li>
-            <li data-mcp-tool="task_move"><div><code>task_move</code><span class="tool-access">Write</span></div><p>Move a task between lists or board statuses.</p></li>
+            <li data-mcp-tool="task_move"><div><code>task_move</code><span class="tool-access">Write</span></div><p>Move a task between lists/statuses or place it before/after another card.</p></li>
           </ul></details>
           <details class="connector-tool-group"><summary><span>Notes</span><span class="tool-group-count">7 tools <span aria-hidden="true">+</span></span></summary><ul>
             <li data-mcp-tool="note_folders"><div><code>note_folders</code><span class="tool-access">Read</span></div><p>List note folders and their note counts.</p></li>

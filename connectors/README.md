@@ -60,7 +60,21 @@ Every saved task has an immutable ticket ID such as **FOG-42**, independent of i
 
 Set `parent_id` to a UUID or ticket ID to make a subtask; an empty string removes its parent. Set `blocked_by` to an array of task UUIDs/ticket IDs; `[]` clears dependencies. Missing tasks, self-links, and circular parent/dependency chains are rejected. Responses include `parent_id`, `subtask_ids`, `blocked_by`, and a computed `is_blocked`. Completing a blocker clears that indicator; it does not automatically move the dependent task. A task's revision covers its own stored fields, so changes to children/blockers require a fresh read to see computed relation state.
 
-`task_move` can change list and/or any custom status. Completing a task uses the app's existing activity-log preference.
+`task_move` can change list and/or any custom status, and can rearrange cards within a status. Completing a task uses the app's existing activity-log preference.
+
+### Rearrange tasks
+
+`tasks_list` returns tasks in the same saved **Manual order** used by the board and list. Its top-level `order_revision` covers the whole workspace, even with filters or pagination. `task_get` and individual task responses also include that token.
+
+Read the task and the relevant column first, then call `task_move` with its current content `revision`, a fresh `order_revision`, and exactly one of `before_id` or `after_id`. Anchors accept UUIDs or ticket IDs and must be another task in the destination status. Supply `status` as well to place a card while moving between columns; without it, the current status is used. List membership stays unchanged unless `list` is supplied.
+
+```json
+{"name":"tasks_list","arguments":{"status":"todo"}}
+{"name":"task_get","arguments":{"id":"FOG-42"}}
+{"name":"task_move","arguments":{"id":"FOG-42","revision":"<current-content-revision>","order_revision":"<current-order-revision>","before_id":"FOG-38"}}
+```
+
+Order changes survive restarting and archive export/import. Only the moved task changes position; hidden tasks retain their relative order. New tasks appear at the top. Content revisions remain unchanged for a pure rearrangement; the separate order token detects intervening reorders, additions, deletions, and status/list changes. A stale token returns `conflict` before any mutation; fetch again and reconsider placement. Permissions and open-editor protections apply as with other task moves. Reconnect your MCP client after updating Foglio to discover the extended arguments.
 
 Example requests:
 

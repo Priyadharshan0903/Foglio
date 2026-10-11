@@ -160,15 +160,22 @@ public final class LocalConnectorServer {
                 do {
                     let request = try ConnectorSocket.read(fd)
                     handler(request) { [self] result in workers.async { [self] in finish(fd, result: result) } }
-                } catch { finish(fd, result: ["ok": false, "error": ConnectorError("invalid_request", error.localizedDescription).json]) }
+                } catch {
+                    // Availability probes and revoked clients close without a
+                    // request. There is no peer left to receive an error reply.
+                    let closed = (error as? ConnectorError)?.code == "connection_closed"
+                    finish(fd, result: closed ? nil : ["ok": false, "error": ConnectorError("invalid_request", error.localizedDescription).json])
+                }
             }
         }
     }
-    private func finish(_ fd: Int32, result: JSON) {
+    private func finish(_ fd: Int32, result: JSON?) {
         // stop() shuts down reads/writes but lets their owners close descriptors,
         // so a recycled descriptor cannot be closed by a late response.
-        do { try ConnectorSocket.write(result, fd) }
-        catch { try? ConnectorSocket.write(["ok": false, "error": ConnectorError("response_failed", error.localizedDescription).json], fd) }
+        if let result {
+            do { try ConnectorSocket.write(result, fd) }
+            catch { try? ConnectorSocket.write(["ok": false, "error": ConnectorError("response_failed", error.localizedDescription).json], fd) }
+        }
         lock.lock(); clients.remove(fd); Darwin.close(fd); lock.unlock()
     }
     public func stop() {
