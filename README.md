@@ -121,6 +121,8 @@ Lift a task card to drag a full-size preview with a shadow. A theme-colored plac
 
 Ordering survives restarts and archive export/import; new tasks appear first. Board and list share **Manual order**. Choosing a date/priority sort is still available; dragging or using **Move up / Move down** switches back to Manual order. Filtered views move only the chosen task and preserve the other tasks' relative order.
 
+Completed task titles stay struck through in board and list views. Moving a task to Done (including custom Done-category statuses) draws the strike from left to right; reopening removes it. Reduce Motion shows the completed style immediately. The same feedback applies when an agent completes a task through the existing connector tools.
+
 Agents can use `task_move` with one of `before_id` / `after_id` (UUID or ticket ID) and a fresh `order_revision` from `tasks_list` or `task_get`, alongside the task's content `revision`. The anchor must be in the destination status; optionally supply `status` to move across columns while positioning. Intervening reorders, additions, deletions, or status/list changes return `conflict`. See the [connector ordering example](connectors/README.md#rearrange-tasks).
 
 Repository contributors and agents should follow [AGENTS.md](AGENTS.md) for app, connector, documentation, website, screenshot, validation, and release follow-ups.

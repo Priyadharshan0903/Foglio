@@ -13,6 +13,7 @@ struct TasksView: View {
     @State private var draggedTaskID: UUID?
     @State private var draggedTaskSize = CGSize(width: 300, height: 120)
     @State private var boardDragHover: TaskBoardDragHover?
+    @State private var completingTaskIDs: Set<UUID> = []
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var managingStatuses = false
     @State private var selectedProject: String?
@@ -45,6 +46,18 @@ struct TasksView: View {
             if state.taskLayout == .board { board } else { list }
         }
         .background(theme.bg).tint(theme.accentDeep)
+        // Track completion above the status groups: a moved card gets a new
+        // SwiftUI identity in its destination column (in both layouts).
+        .onChange(of: Set(store.tasks.filter(\.done).map(\.id))) { previous, current in
+            completingTaskIDs.formUnion(current.subtracting(previous))
+            completingTaskIDs.formIntersection(current)
+        }
+        .task(id: completingTaskIDs) {
+            guard !completingTaskIDs.isEmpty else { return }
+            do { try await Task.sleep(for: .milliseconds(600)) }
+            catch { return }
+            completingTaskIDs.removeAll()
+        }
         .onChange(of: store.lanes) { _, lanes in
             if let selectedList, !lanes.contains(selectedList) { self.selectedList = nil }
         }
@@ -245,8 +258,8 @@ struct TasksView: View {
                             .font(Typo.sans(10.5)).foregroundStyle(theme.accentDeep)
                     }
                 }
-                Text(task.label).font(Typo.sans(13, .medium)).foregroundStyle(task.done ? theme.muted : theme.text)
-                    .lineLimit(3).multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+                TaskTitle(task: task, theme: theme, font: Typo.sans(13, .medium), lineLimit: 3,
+                          animateCompletion: completingTaskIDs.contains(task.id))
                 if !task.summary.isEmpty {
                     Text(task.summary).font(Typo.sans(11.5)).foregroundStyle(theme.muted)
                         .lineLimit(2).multilineTextAlignment(.leading)
@@ -310,38 +323,43 @@ struct TasksView: View {
                 ForEach(store.statuses) { workflow in
                     let tasks = visible.filter { store.status(for: $0).id == workflow.id }
                     if !tasks.isEmpty {
-                        HStack(spacing: 8) {
-                            statusIcon(workflow)
-                            Text(workflow.label).font(Typo.sans(12, .semibold)).foregroundStyle(theme.text)
-                            Text("\(tasks.count)").font(Typo.sans(11)).foregroundStyle(theme.muted)
-                        }.padding(.horizontal, 24).padding(.vertical, 12).background(theme.field)
-                        ForEach(tasks) { task in
-                            Button { taskEdit = TaskPresentation(task: task, isNew: false) } label: {
-                                HStack(spacing: 12) {
-                                    statusIcon(store.status(for: task))
-                                    Text(task.ticketID).font(Typo.mono(11)).foregroundStyle(theme.muted).frame(width: 72, alignment: .leading)
-                                    VStack(alignment: .leading, spacing: 4) {
-                                        Text(task.label).font(Typo.sans(13)).foregroundStyle(task.done ? theme.muted : theme.text).lineLimit(2)
-                                        if let project = task.project { Text(project).font(Typo.sans(11)).foregroundStyle(theme.muted) }
+                        // Keep row identities scoped to their status group so
+                        // moving a UUID refreshes its captured completion state.
+                        LazyVStack(alignment: .leading, spacing: 0) {
+                            HStack(spacing: 8) {
+                                statusIcon(workflow)
+                                Text(workflow.label).font(Typo.sans(12, .semibold)).foregroundStyle(theme.text)
+                                Text("\(tasks.count)").font(Typo.sans(11)).foregroundStyle(theme.muted)
+                            }.padding(.horizontal, 24).padding(.vertical, 12).background(theme.field)
+                            ForEach(tasks) { task in
+                                Button { taskEdit = TaskPresentation(task: task, isNew: false) } label: {
+                                    HStack(spacing: 12) {
+                                        statusIcon(store.status(for: task))
+                                        Text(task.ticketID).font(Typo.mono(11)).foregroundStyle(theme.muted).frame(width: 72, alignment: .leading)
+                                        VStack(alignment: .leading, spacing: 4) {
+                                            TaskTitle(task: task, theme: theme, font: Typo.sans(13), lineLimit: 2,
+                                                      animateCompletion: completingTaskIDs.contains(task.id))
+                                            if let project = task.project { Text(project).font(Typo.sans(11)).foregroundStyle(theme.muted) }
+                                        }
+                                        if task.taskPriority != .none { Text(task.taskPriority.label).font(Typo.sans(11)).foregroundStyle(theme.accentDeep) }
+                                        if let date = task.dueDate { Text(date, format: .dateTime.month(.abbreviated).day()).font(Typo.sans(11)).foregroundStyle(theme.muted) }
+                                        Spacer(minLength: 12)
+                                        Text(task.lane.label).font(Typo.sans(11)).foregroundStyle(theme.muted)
+                                        Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(theme.muted)
                                     }
-                                    if task.taskPriority != .none { Text(task.taskPriority.label).font(Typo.sans(11)).foregroundStyle(theme.accentDeep) }
-                                    if let date = task.dueDate { Text(date, format: .dateTime.month(.abbreviated).day()).font(Typo.sans(11)).foregroundStyle(theme.muted) }
-                                    Spacer(minLength: 12)
-                                    Text(task.lane.label).font(Typo.sans(11)).foregroundStyle(theme.muted)
-                                    Image(systemName: "chevron.right").font(.system(size: 9)).foregroundStyle(theme.muted)
-                                }
-                                .padding(.horizontal, 24).padding(.vertical, 13).hoverHighlight(theme, cornerRadius: 0)
-                                .overlay(alignment: .bottom) { Rectangle().fill(theme.lineSoft).frame(height: 1) }
-                            }.buttonStyle(.flat)
-                                .overlay {
-                                    TaskCardDragSource(taskID: task.id, onOpen: { taskEdit = TaskPresentation(task: task, isNew: false) },
-                                                       onDragChanged: { draggedTaskID = $0 })
-                                        .accessibilityHidden(true)
-                                }
-                                .contextMenu { taskActions(task) }
-                                .modifier(TaskInsertionTarget(taskID: task.id, draggedID: draggedTaskID, theme: theme) { id, after in
-                                    place(id, beside: task, after: after)
-                                })
+                                    .padding(.horizontal, 24).padding(.vertical, 13).hoverHighlight(theme, cornerRadius: 0)
+                                    .overlay(alignment: .bottom) { Rectangle().fill(theme.lineSoft).frame(height: 1) }
+                                }.buttonStyle(.flat)
+                                    .overlay {
+                                        TaskCardDragSource(taskID: task.id, onOpen: { taskEdit = TaskPresentation(task: task, isNew: false) },
+                                                           onDragChanged: { draggedTaskID = $0 })
+                                            .accessibilityHidden(true)
+                                    }
+                                    .contextMenu { taskActions(task) }
+                                    .modifier(TaskInsertionTarget(taskID: task.id, draggedID: draggedTaskID, theme: theme) { id, after in
+                                        place(id, beside: task, after: after)
+                                    })
+                            }
                         }
                     }
                 }

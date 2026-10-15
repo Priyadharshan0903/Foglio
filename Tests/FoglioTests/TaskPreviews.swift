@@ -33,33 +33,77 @@ func renderTaskPreviewsIfRequested() {
     }
     var updated = store.tasks.first { $0.id == parent.id }!
     updated.blockedBy = [store.tasks.first { $0.label.hasPrefix("Review") }!.id]; store.update(updated)
-    func render<Content: View>(_ name: String, width: CGFloat, height: CGFloat, content: Content) {
-        let host = NSHostingView(rootView: content)
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height), styleMask: [.borderless], backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false; window.contentView = host
-        host.layoutSubtreeIfNeeded(); RunLoop.main.run(until: Date().addingTimeInterval(0.3)); host.layoutSubtreeIfNeeded()
+    func capture(_ host: NSView, name: String, after delay: TimeInterval) {
+        host.layoutSubtreeIfNeeded(); RunLoop.main.run(until: Date().addingTimeInterval(delay)); host.layoutSubtreeIfNeeded()
         if let bitmap = host.bitmapImageRepForCachingDisplay(in: host.bounds) {
             host.cacheDisplay(in: host.bounds, to: bitmap)
             try! bitmap.representation(using: .png, properties: [:])!.write(to: output.appendingPathComponent(name + ".png"))
         }
+    }
+    func render<Content: View>(_ name: String, width: CGFloat, height: CGFloat, content: Content) {
+        let host = NSHostingView(rootView: content)
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: height), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = host
+        capture(host, name: name, after: 0.3)
         window.close()
     }
     for mode in [ThemeMode.ember, .harbor] {
         state.themeMode = mode
         render("board-" + mode.rawValue, width: 1840, height: 940, content: MainWindowView(state: state, store: store, calendar: calendar))
+        render("board-narrow-" + mode.rawValue, width: 880, height: 720, content: TasksView(state: state, store: store))
+        state.taskLayout = .list
+        render("list-" + mode.rawValue, width: 880, height: 720, content: TasksView(state: state, store: store))
+        state.taskLayout = .board
         render("editor-" + mode.rawValue, width: 1080, height: 800, content: TaskDetailEditor(task: updated, isNew: false, store: store, theme: mode.theme, autoLog: false, onClose: {}, onDelete: {}))
     }
     render("statuses", width: 600, height: 620, content: TaskStatusManager(store: store, theme: .ember))
     let previewToday = Calendar.current.date(from: DateComponents(year: 2026, month: 10, day: 11))!
     let previewDate = Calendar.current.date(byAdding: .day, value: 3, to: previewToday)!
     for mode in ThemeMode.allCases {
+        render("completion-" + mode.rawValue, width: 280, height: 340,
+               content: TaskCompletionPreview(theme: mode.theme))
         render("date-picker-" + mode.rawValue, width: 292, height: 378,
                content: ThemedDateCalendar(selection: .constant(previewDate), theme: mode.theme,
                                            today: previewToday, onClose: {}))
         render("drag-feedback-" + mode.rawValue, width: 344, height: 540,
                content: TaskDragFeedbackPreview(theme: mode.theme))
     }
+    // Exercise actual status-group reparenting with a mounted native view.
+    // These are timed snapshots of a model-driven move, not mouse drag tests.
+    state.themeMode = .ember
+    let moving = store.tasks.first { $0.label == "Design the welcome page" }!
+    for layout in [TaskLayout.board, .list] {
+        state.taskLayout = layout
+        let width: CGFloat = layout == .board ? 1840 : 880
+        let host = NSHostingView(rootView: TasksView(state: state, store: store))
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: width, height: 720),
+                              styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false; window.contentView = host
+        capture(host, name: "completion-\(layout.rawValue)-open", after: 0.3)
+        store.setStatus(taskId: moving.id, statusID: "done", autoLog: false)
+        capture(host, name: "completion-\(layout.rawValue)-moving", after: 0.14)
+        capture(host, name: "completion-\(layout.rawValue)-done", after: 0.5)
+        store.setStatus(taskId: moving.id, statusID: "todo", autoLog: false)
+        capture(host, name: "completion-\(layout.rawValue)-reopened", after: 0.3)
+        window.close()
+    }
     print("Task previews saved to \(path)")
+}
+
+/// Wrapped and truncated native strikes in their resting completed state.
+private struct TaskCompletionPreview: View {
+    let theme: Theme
+    private let title = "Prepare the welcome page and review the complete studio launch checklist before sharing the collection with everyone"
+    var body: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            Text("Open").font(Typo.sans(11)).foregroundStyle(theme.muted)
+            TaskTitle(task: TaskItem(label: title), theme: theme, font: Typo.sans(13, .medium), lineLimit: 3)
+            Text("Done · wrapped").font(Typo.sans(11)).foregroundStyle(theme.muted)
+            TaskTitle(task: TaskItem(label: title, done: true), theme: theme, font: Typo.sans(13, .medium), lineLimit: 3)
+            Text("Done · truncated").font(Typo.sans(11)).foregroundStyle(theme.muted)
+            TaskTitle(task: TaskItem(label: title, done: true), theme: theme, font: Typo.sans(13), lineLimit: 2)
+        }.padding(20).frame(width: 280, height: 340, alignment: .topLeading).background(theme.surface)
+    }
 }
 
 /// Actual drag decorations with simulated hover feedback and fictional cards.

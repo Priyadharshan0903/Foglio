@@ -29,6 +29,8 @@ The board drag interaction uses a full-size lifted card preview, a theme-colored
 
 ## Images and motion
 
+Completed task titles stay struck through in the native board and list. A fresh move into any Done-category status reveals the strike from left to right; reopening removes it, and Reduce Motion applies the final style immediately. Existing connector completion operations drive the same feedback, so no tool changes are needed.
+
 All assets live in [assets](assets/). See [the asset guide](assets/ASSETS.md) for composition, provenance, accessibility, and animation guidance. Full generation prompts are in [prompts.json](assets/prompts.json).
 
 - `assets/originals/`: untouched generated PNGs and native app renders.

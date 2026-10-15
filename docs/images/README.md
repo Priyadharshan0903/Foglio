@@ -11,6 +11,8 @@ These are native SwiftUI snapshots from the opt-in test preview renderers. They 
 | `task-editor.png` | `Tests/FoglioTests/LandingAssets.swift` | Shared rich editor with task properties and a saved ticket ID. |
 | `agent-connections.png` | `Tests/FoglioTests/SettingsPreviews.swift` | Agent settings with access switches and setup buttons. |
 
+`FOGLIO_TASK_PREVIEWS` also emits `completion-<theme>.png` in all eight palettes to inspect wrapped/truncated strikes, plus narrow board and list renders in Ember and Harbor. `completion-board-*` and `completion-list-*` capture open, moving, completed, and reopened states of a model-driven status change in a mounted native view. These timed snapshots check the strike reveal across status groups; they do not exercise a live mouse drag or toggle the system Reduce Motion preference. The published board screenshot shows the resting strikethrough.
+
 From the repository root, regenerate the source previews:
 
 ```sh
