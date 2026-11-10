@@ -120,7 +120,7 @@ async function selectTheme(button) {
   themeShowcase.style.setProperty('--theme-accent', button.style.getPropertyValue('--swatch'));
   document.querySelector('#theme-name').textContent = label;
   document.querySelector('#theme-description').textContent = button.dataset.description;
-  document.querySelector('#theme-count').textContent = `${String(requestedTheme + 1).padStart(2, '0')} / 08`;
+  document.querySelector('#theme-count').textContent = `${String(requestedTheme + 1).padStart(2, '0')} / ${String(themeButtons.length).padStart(2, '0')}`;
   themeCaption.textContent = `${label} · Actual app preview with example content`;
   themePreview.classList.remove('loading');
   themePreview.setAttribute('aria-busy', 'false');

@@ -2,7 +2,7 @@
 
 These are native SwiftUI snapshots from the opt-in test preview renderers. They use fictional notes and tasks, temporary libraries, and isolated preferences. The agent connection state is an example; no agent server is started by that preview.
 
-`FOGLIO_TASK_PREVIEWS` also emits `drag-feedback-<theme>.png` for all eight palettes. These render the actual lane highlight, insertion line, and full-height placeholder with simulated hover state and fictional cards. `native-lift-ember.png` renders the real board after a simulated native source-lift callback; it checks the source gap and restoration lifecycle. `native-drag-card-ember.png` renders its actual lifted-card image, including shadow padding. These are not live mouse drag verification. The existing board screenshots show the normal resting state.
+`FOGLIO_TASK_PREVIEWS` also emits `drag-feedback-<theme>.png` for all fourteen palettes. These render the actual lane highlight, insertion line, and full-height placeholder with simulated hover state and fictional cards. `native-lift-ember.png` renders the real board after a simulated native source-lift callback; it checks the source gap and restoration lifecycle. `native-drag-card-ember.png` renders its actual lifted-card image, including shadow padding. These are not live mouse drag verification. The existing board screenshots show the normal resting state.
 
 | Image | Renderer | Content |
 | --- | --- | --- |
@@ -11,7 +11,7 @@ These are native SwiftUI snapshots from the opt-in test preview renderers. They 
 | `task-editor.png` | `Tests/FoglioTests/LandingAssets.swift` | Shared rich editor with task properties and a saved ticket ID. |
 | `agent-connections.png` | `Tests/FoglioTests/SettingsPreviews.swift` | Agent settings with access switches and setup buttons. |
 
-`FOGLIO_TASK_PREVIEWS` also emits `completion-<theme>.png` in all eight palettes to inspect wrapped/truncated strikes, plus narrow board and list renders in Ember and Harbor. `completion-board-*` and `completion-list-*` capture open, moving, completed, and reopened states of a model-driven status change in a mounted native view. These timed snapshots check the strike reveal across status groups; they do not exercise a live mouse drag or toggle the system Reduce Motion preference. The published board screenshot shows the resting strikethrough.
+`FOGLIO_TASK_PREVIEWS` also emits `completion-<theme>.png` in all fourteen palettes to inspect wrapped/truncated strikes, plus narrow board and list renders in Ember and Harbor. `completion-board-*` and `completion-list-*` capture open, moving, completed, and reopened states of a model-driven status change in a mounted native view. These timed snapshots check the strike reveal across status groups; they do not exercise a live mouse drag or toggle the system Reduce Motion preference. The published board screenshot shows the resting strikethrough.
 
 From the repository root, regenerate the source previews:
 

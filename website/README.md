@@ -1,6 +1,6 @@
 # Foglio landing page
 
-A local, buildless landing page with cinematic paper artwork, native app previews, scroll-driven feature transitions, eight working theme previews, a local MCP connector showcase, and a real DMG download. Publishing is managed by the repository’s Pages workflow; local edits can be reviewed with the commands below.
+A local, buildless landing page with cinematic paper artwork, native app previews, scroll-driven feature transitions, fourteen working theme previews, a local MCP connector showcase, and a real DMG download. Publishing is managed by the repository’s Pages workflow; local edits can be reviewed with the commands below.
 
 ## Preview
 
@@ -39,7 +39,7 @@ All assets live in [assets](assets/). See [the asset guide](assets/ASSETS.md) fo
 
 The hero enters in staggered layers, the product window responds gently to the pointer, feature previews crossfade as their accompanying story enters view, and the paper sculpture floats independently. Scroll work is scheduled with `requestAnimationFrame` and limited to visible sections. Motion is reduced on mobile and disabled when the visitor prefers reduced motion. The page and download remain usable without JavaScript.
 
-The theme showcase groups its preview and swatches in one panel. Theme names, descriptions, and accent colors update together after the next image is ready. Use the swatches, previous/next buttons, or arrow keys while a swatch has focus; Home and End jump to the first and last palettes. The current preview stays visible during loading, and reduced-motion mode switches without a crossfade. Branding uses the selected Refined Margin icon.
+The theme showcase groups its preview and swatches in one panel. Theme names, descriptions, and accent colors update together after the next image is ready. Use the swatches, previous/next buttons, or arrow keys while a swatch has focus; Home and End jump to the first and last palettes. The app offers seven light and seven dark palettes, including Meadow, Porcelain, Aubergine, Deep Sea, White Monochrome, and Dark Monochrome. Both monochrome palettes keep all accent and status colors grayscale. Settings → Shortcuts records a custom global New Note combination with Command, Control, or Option, checks conflicts, saves immediately, and can restore ⇧⌘N. The in-app ⌘N command stays available. These appearance and local keyboard preferences do not change the connector tools. The current preview stays visible during loading, and reduced-motion mode switches without a crossfade. Branding uses the selected Refined Margin icon.
 
 App previews contain fictional example content from an isolated library, not personal notes or tasks. The calendar is an explicitly labeled HTML illustration of the supported workflow, not a screenshot.
 

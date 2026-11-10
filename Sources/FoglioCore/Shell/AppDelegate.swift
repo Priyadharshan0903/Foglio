@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private var calendarTimer: Timer?
     private var agentConnector: AgentConnectorController?
     private var lastBadge: String?
+    private var newNoteHotKeyID: UInt32?
 
     /// Observers for the trash sweep — see `startTrashSweep()`.
     private var sweepObservers: [NSObjectProtocol] = []
@@ -135,7 +136,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
     private func registerHotKeys() {
         HotKeyCenter.shared.register(.quickCapture) { [weak self] in self?.go(.capture) }
         HotKeyCenter.shared.register(.tasks) { [weak self] in self?.go(.tasks) }
-        HotKeyCenter.shared.register(.newNote) { [weak self] in self?.newScratchNote() }
+        state.installNewNoteShortcut = { [weak self] shortcut in
+            guard let self else { return }
+            self.newNoteHotKeyID = try HotKeyCenter.shared.replace(self.newNoteHotKeyID, with: shortcut) { [weak self] in
+                self?.newScratchNote()
+            }
+        }
+        do { try state.installNewNoteShortcut?(state.newNoteShortcut) }
+        catch { state.newNoteShortcutError = error.localizedDescription }
     }
 
     /// Bring the window forward on a given section.
@@ -157,7 +165,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate {
         }
     }
 
-    /// ⌘⇧N — new note in Scratch (:1225).
+    /// New note from the menu or the user-configurable global shortcut.
     private func newScratchNote() {
         let note = store.newNote(in: state.folderFilter ?? .scratch)
         state.search = ""

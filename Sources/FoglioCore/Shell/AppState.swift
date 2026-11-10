@@ -170,12 +170,41 @@ final class AppState {
     var agentConnectorAllowEdits = false { didSet { defaults.set(agentConnectorAllowEdits, forKey: "agentConnectorAllowEdits") } }
     var agentConnectorStatus = "Off"
 
+    private(set) var newNoteShortcut = HotKeyCenter.Shortcut.newNote
+    var newNoteShortcutError: String?
+    @ObservationIgnored var installNewNoteShortcut: ((HotKeyCenter.Shortcut) throws -> Void)?
+
+    /// Validate and register before saving; failed registration preserves the old preference.
+    @discardableResult
+    func setNewNoteShortcut(_ shortcut: HotKeyCenter.Shortcut) -> Bool {
+        if let error = shortcut.validationError {
+            newNoteShortcutError = error
+            return false
+        }
+        do {
+            let data = try JSONEncoder().encode(shortcut)
+            try installNewNoteShortcut?(shortcut)
+            defaults.set(data, forKey: "newNoteShortcut")
+            newNoteShortcut = shortcut
+            newNoteShortcutError = nil
+            return true
+        } catch {
+            newNoteShortcutError = error.localizedDescription
+            return false
+        }
+    }
+
     var theme: Theme { themeMode.theme }
 
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        if let data = defaults.data(forKey: "newNoteShortcut"),
+           let shortcut = try? JSONDecoder().decode(HotKeyCenter.Shortcut.self, from: data),
+           shortcut.validationError == nil {
+            newNoteShortcut = shortcut
+        }
         agentConnectorEnabled = defaults.bool(forKey: "agentConnectorEnabled")
         agentConnectorAllowEdits = defaults.bool(forKey: "agentConnectorAllowEdits")
         taskLayout = TaskLayout(rawValue: defaults.string(forKey: "taskLayout") ?? "") ?? .board

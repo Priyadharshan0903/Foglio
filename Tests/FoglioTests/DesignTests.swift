@@ -116,13 +116,14 @@ func iconAlignmentTests() {
 /// accent, or a preference name that stops resolving.
 func themeTests() {
     Check.suite("Themes — the list") {
-        Check.equal(ThemeMode.allCases.count, 8, "eight palettes ship")
+        Check.equal(ThemeMode.allCases.count, 14, "fourteen palettes ship")
         Check.equal(
             ThemeMode.lightModes.count + ThemeMode.darkModes.count,
             ThemeMode.allCases.count,
             "every palette is either light or dark"
         )
-        Check.equal(ThemeMode.lightModes.count, 4, "four of them are light")
+        Check.equal(ThemeMode.lightModes.count, 7, "seven of them are light")
+        Check.equal(ThemeMode.darkModes.count, 7, "seven of them are dark")
 
         // The raw values are the on-disk preference: someone who picked dark
         // before this list grew must still land on dark.
@@ -206,11 +207,26 @@ func themeTests() {
                 )
             }
 
-            // Warnings are warm in every palette, original two included.
-            Check.expect(
-                (10...45).contains(hueDegrees(t.clay)),
-                "\(mode.label) warning ink is warm (\(hueDegrees(t.clay))°)"
-            )
+            if [.whiteMonochrome, .darkMonochrome].contains(mode) {
+                Check.equal(saturation(t.clay), 0, "\(mode.label) warning ink stays neutral")
+            } else {
+                Check.expect(
+                    (10...45).contains(hueDegrees(t.clay)),
+                    "\(mode.label) warning ink is warm (\(hueDegrees(t.clay))°)"
+                )
+            }
+        }
+    }
+
+    Check.suite("Themes — monochrome stays grayscale across every token") {
+        for mode in [ThemeMode.whiteMonochrome, .darkMonochrome] {
+            for token in Mirror(reflecting: mode.theme).children {
+                if let color = token.value as? Color {
+                    Check.equal(saturation(color), 0, "\(mode.label) \(token.label ?? "color") has no tint")
+                } else if let shadow = token.value as? ShadowSpec {
+                    Check.equal(saturation(shadow.color), 0, "\(mode.label) shadow has no tint")
+                }
+            }
         }
     }
 

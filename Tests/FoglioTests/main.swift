@@ -4,6 +4,7 @@ import Foundation
 designTokenTests()
 MainActor.assumeIsolated { themeTests() }
 MainActor.assumeIsolated { themeSurfaceTests() }
+MainActor.assumeIsolated { shortcutTests() }
 dockingTests()
 iconAlignmentTests()
 markdownTests()

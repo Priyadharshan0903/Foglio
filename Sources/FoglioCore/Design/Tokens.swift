@@ -165,6 +165,36 @@ extension Theme {
         ok: 0x49735D, clay: 0xB26A4A
     )
 
+    /// Meadow — fresh ivory and forest-green ink.
+    static let meadow = Theme.make(
+        isDark: false,
+        desk: 0xD7DFCE, bg: 0xF0F4E9, surface: 0xFAFCF6, raised: 0xFFFFFF,
+        field: 0xEAF0E2, codeBg: 0xE7EEDC,
+        text: 0x202A20, muted: 0x63705C,
+        accent: 0x427047, onAccent: 0xFFFFFF, accentDeep: 0x325C37,
+        ok: 0x496E50, clay: 0xA45E32
+    )
+
+    /// Porcelain — a bright blue-white workspace with cobalt details.
+    static let porcelain = Theme.make(
+        isDark: false,
+        desk: 0xD9DFEC, bg: 0xF2F5FC, surface: 0xFFFFFF, raised: 0xFFFFFF,
+        field: 0xEAF0FA, codeBg: 0xE7EDF8,
+        text: 0x202839, muted: 0x657189,
+        accent: 0x365DA8, onAccent: 0xFFFFFF, accentDeep: 0x294B8C,
+        ok: 0x486D60, clay: 0xA65F36
+    )
+
+    /// White Monochrome — white paper, black ink, and neutral grey details.
+    static let whiteMonochrome = Theme.make(
+        isDark: false,
+        desk: 0xDEDEDE, bg: 0xFAFAFA, surface: 0xFFFFFF, raised: 0xFFFFFF,
+        field: 0xF0F0F0, codeBg: 0xECECEC,
+        text: 0x171717, muted: 0x686868,
+        accent: 0x292929, onAccent: 0xFFFFFF, accentDeep: 0x171717,
+        ok: 0x555555, clay: 0x6B6B6B, invMuted: 0xB0B0B0
+    )
+
     // MARK: - Dark palettes
 
     /// Night Moss — the original after-hours palette (`Day Log.dc.html`:23).
@@ -210,6 +240,36 @@ extension Theme {
         clay: 0xD79A6A,
         invMuted: 0x5E5E5E
     )
+
+    /// Aubergine — a plum-black ground with soft orchid highlights.
+    static let aubergine = Theme.make(
+        isDark: true,
+        desk: 0x100A12, bg: 0x1B1420, surface: 0x251C2B, raised: 0x302537,
+        field: 0x1B1420, codeBg: 0x150F19,
+        text: 0xF0E5F1, muted: 0xAC94B0,
+        accent: 0xD5A0D9, onAccent: 0x1B1420, accentDeep: 0xE5BCE8,
+        clay: 0xDDA078, invMuted: 0x67596B
+    )
+
+    /// Deep Sea — petrol-blue surfaces with a sea-glass accent.
+    static let deepSea = Theme.make(
+        isDark: true,
+        desk: 0x060F12, bg: 0x101F25, surface: 0x172A31, raised: 0x20353D,
+        field: 0x101F25, codeBg: 0x0B181E,
+        text: 0xE1EFF0, muted: 0x91ADB4,
+        accent: 0x78CCBB, onAccent: 0x101F25, accentDeep: 0xA1E1D4,
+        clay: 0xE0A379, invMuted: 0x506870
+    )
+
+    /// Dark Monochrome — black and charcoal surfaces with white highlights.
+    static let darkMonochrome = Theme.make(
+        isDark: true,
+        desk: 0x000000, bg: 0x101010, surface: 0x191919, raised: 0x242424,
+        field: 0x101010, codeBg: 0x0A0A0A,
+        text: 0xF2F2F2, muted: 0xA0A0A0,
+        accent: 0xD6D6D6, onAccent: 0x141414, accentDeep: 0xF5F5F5,
+        clay: 0xB5B5B5, invMuted: 0x565656
+    )
 }
 
 /// The palettes a user can pick, in the order Settings lays them out.
@@ -218,8 +278,8 @@ extension Theme {
 /// names from when those were the only two — an existing preference still
 /// resolves after the list grew.
 enum ThemeMode: String, CaseIterable, Identifiable {
-    case light, paper, harbor, blossom
-    case dark, midnight, ember, carbon
+    case light, paper, harbor, blossom, meadow, porcelain, whiteMonochrome
+    case dark, midnight, ember, carbon, aubergine, deepSea, darkMonochrome
 
     var id: String { rawValue }
 
@@ -233,6 +293,12 @@ enum ThemeMode: String, CaseIterable, Identifiable {
         case .midnight: return .midnight
         case .ember: return .ember
         case .carbon: return .carbon
+        case .meadow: return .meadow
+        case .porcelain: return .porcelain
+        case .aubergine: return .aubergine
+        case .deepSea: return .deepSea
+        case .whiteMonochrome: return .whiteMonochrome
+        case .darkMonochrome: return .darkMonochrome
         }
     }
 
@@ -246,6 +312,12 @@ enum ThemeMode: String, CaseIterable, Identifiable {
         case .midnight: return "Midnight"
         case .ember: return "Ember"
         case .carbon: return "Carbon"
+        case .meadow: return "Meadow"
+        case .porcelain: return "Porcelain"
+        case .aubergine: return "Aubergine"
+        case .deepSea: return "Deep Sea"
+        case .whiteMonochrome: return "White Monochrome"
+        case .darkMonochrome: return "Dark Monochrome"
         }
     }
 

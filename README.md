@@ -2,7 +2,7 @@
 
 A native Mac workspace for notes, tasks, and your calendar—with a local MCP connector for your agents.
 
-Write in a familiar editor, organize tasks on a board or list, and turn meetings into notes and follow-ups. Choose from eight themes; your notes stay in Markdown and your task data stays on your Mac.
+Write in a familiar editor, organize tasks on a board or list, and turn meetings into notes and follow-ups. Choose from fourteen themes; your notes stay in Markdown and your task data stays on your Mac.
 
 ![Foglio task board in Ember, showing ticket IDs, custom statuses, priorities, and project details](docs/images/tasks-board.png)
 
@@ -21,7 +21,7 @@ Write in a familiar editor, organize tasks on a board or list, and turn meetings
 - **Notes:** rich text, headings, numbered and unordered lists, circular checklists, quotes, code, tables, links, and attachments. Markdown files remain readable outside Foglio.
 - **Tasks:** board and list views, drag between or within status columns with saved manual ordering, custom statuses, stable `FOG-42` ticket IDs, priorities, projects, assignees, labels, due dates, estimates, subtasks, and blocking relationships.
 - **Calendar:** read from macOS Calendar, a calendar URL, or an `.ics` file. Create a meeting note or a follow-up task without leaving the workspace.
-- **Make it yours:** eight palettes, a themed date picker, a floating bar, quick capture, and focused Settings pages.
+- **Make it yours:** fourteen palettes, a themed date picker, a floating bar, quick capture, a customizable global New Note shortcut, and focused Settings pages.
 - **Take your work with you:** export readable Markdown and a restorable archive with attachments. Import asks before replacing your library.
 
 ## Get started
@@ -47,6 +47,12 @@ npm --prefix website run dev
 ```
 
 Open **http://127.0.0.1:4173** and keep the server running. The site has no npm dependencies.
+
+## Themes and shortcuts
+
+Choose **Settings → Appearance** for seven light and seven dark palettes. Meadow and Porcelain add bright green and cobalt choices; Aubergine and Deep Sea add plum and sea-glass dark choices. White Monochrome and Dark Monochrome use only black, white, and grey, including accents and status colors. Existing theme selections are preserved.
+
+In **Settings → Shortcuts**, click the New Note shortcut and press a new combination. Letters, numbers, punctuation, function keys, and navigation keys work with Command, Control, or Option, optionally adding Shift. The recorder uses your keyboard's actual key codes and labels. Escape cancels; **Reset to ⇧⌘N** restores the default. Changes apply immediately and survive restarts. Foglio reports unavailable combinations and keeps the previous shortcut if registration fails. macOS may reserve some keys for system actions. The in-app **⌘N** menu command remains available.
 
 ## Connect your agents
 

@@ -12,6 +12,7 @@ struct SettingsView: View {
     @State private var copiedReset: Task<Void, Never>?
     @State private var pendingImport: Archive?
     @State private var confirmingImport = false
+    @State private var recordingShortcut = false
     private var theme: Theme { state.theme }
 
     init(state: AppState, store: Store, initialPane: SettingsPane = .appearance) {
@@ -36,7 +37,8 @@ struct SettingsView: View {
             }.id(pane).frame(maxWidth: .infinity, maxHeight: .infinity)
         }.background(theme.bg).tint(theme.accentDeep)
             .preferredColorScheme(theme.isDark ? .dark : .light)
-            .onDisappear { copiedReset?.cancel() }
+            .onChange(of: pane) { _, _ in recordingShortcut = false }
+            .onDisappear { copiedReset?.cancel(); recordingShortcut = false }
             .alert("Replace your library?", isPresented: $confirmingImport) {
                 Button("Replace library", role: .destructive, action: applyImport)
                 Button("Cancel", role: .cancel) { pendingImport = nil }
@@ -86,7 +88,7 @@ struct SettingsView: View {
 
     private var appearancePage: some View {
         VStack(spacing: 20) {
-            SettingsCard("Theme", hint: "Eight palettes, applied across your workspace.", theme: theme) {
+            SettingsCard("Theme", hint: "\(ThemeMode.allCases.count) palettes, applied across your workspace.", theme: theme) {
                 HStack(spacing: 8) {
                     Circle().fill(theme.accent).frame(width: 8, height: 8)
                     Text(state.themeMode.label).font(Typo.sans(11.5, .medium)).foregroundStyle(theme.text)
@@ -106,7 +108,7 @@ struct SettingsView: View {
     private func themeShelf(_ title: String, _ modes: [ThemeMode]) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title).font(Typo.sans(11, .medium)).foregroundStyle(theme.muted)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 140), spacing: 12)], spacing: 12) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 12)], spacing: 12) {
                 ForEach(modes) { themeSwatch($0) }
             }
         }
@@ -253,8 +255,39 @@ struct SettingsView: View {
 
     private var shortcutsPage: some View {
         VStack(spacing: 20) {
+            SettingsCard("New note shortcut", hint: "Works from anywhere while Foglio is running.", theme: theme) {
+                SettingsRow("Create a new note", hint: "Click the shortcut, then press your preferred keys. Include Command, Control, or Option. Press Esc to cancel.", theme: theme) {
+                    Button {
+                        recordingShortcut.toggle()
+                    } label: {
+                        Text(recordingShortcut ? "Press shortcut…" : state.newNoteShortcut.display)
+                            .font(Typo.mono(11)).foregroundStyle(theme.accentDeep)
+                            .padding(.horizontal, 12).padding(.vertical, 9)
+                            .background(recordingShortcut ? theme.accentSoft : theme.field)
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                            .overlay { RoundedRectangle(cornerRadius: 6).stroke(recordingShortcut ? theme.accentDeep : theme.line, lineWidth: 1) }
+                    }.buttonStyle(.flat).modifier(SettingsFocus(theme: theme))
+                        .accessibilityLabel("Change new note shortcut")
+                        .accessibilityValue(recordingShortcut ? "Recording. Press a key combination or Escape to cancel." : state.newNoteShortcut.display)
+                }
+                if recordingShortcut {
+                    ShortcutEventRecorder(onShortcut: { shortcut in
+                        if state.setNewNoteShortcut(shortcut) { recordingShortcut = false }
+                    }, onCancel: { recordingShortcut = false })
+                        .frame(width: 0, height: 0).accessibilityHidden(true)
+                }
+                if let error = state.newNoteShortcutError {
+                    Text(error).font(Typo.sans(11.5)).foregroundStyle(theme.clay)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Button("Reset to ⇧⌘N") {
+                    recordingShortcut = false
+                    state.setNewNoteShortcut(.newNote)
+                }.buttonStyle(.flat).modifier(SettingsFocus(theme: theme))
+                    .font(Typo.sans(11.5)).foregroundStyle(theme.accentDeep)
+            }
             shortcutCard("From anywhere", rows: [
-                ("New note in Scratch", "⌘⇧N"),
+                ("New note", state.newNoteShortcut.display),
                 ("Quick capture", "⌘⇧Space"),
                 ("Open tasks", "⌘⇧T")
             ])
